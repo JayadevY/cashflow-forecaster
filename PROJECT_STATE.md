@@ -4,7 +4,7 @@ Living notes for the Daily Cash-Flow Forecaster. Update this file as the work mo
 
 ## Current phase
 
-Frontend application & Udhaar (Customer Credit) Tracker complete and live. Added dedicated Udhaar tracker across backend (SQLite `udhaar` table, 4 REST endpoints, idempotent seed data for 28 demo accounts, 5 unit tests) and mobile-first React UI (4th bottom tab, total outstanding card, red overdue indicator, collect today list with inline payment box, and add credit form in EN/தமிழ்/हिंदी). All 20 API tests passing.
+Frontend application & plain-language business insight tips complete and live. Added dedicated Udhaar credit tracker and business tips engine (`app/backend/insights.py`, `GET /shops/{id}/tips`) with 7 pattern rules, multi-tier severity sorting (danger > watch > info), and mobile-first `TipsCard` on the Home screen in English, Tamil (தமிழ்), and Hindi (हिंदी). All 25 API tests passing.
 
 ## Files done
 
@@ -28,24 +28,26 @@ Frontend application & Udhaar (Customer Credit) Tracker complete and live. Added
 - `reports/alert_backtest_v2.csv` — three-setting backtest comparison table
 - `reports/figures/kirana_alert_example.png` — visual chart of cash uncertainty band and alert threshold
 - `app/backend/db.py` — SQLite database connection helper, schema migrations, and index definitions (`shops`, `daily_entries`, `planned_payments`, and `udhaar`)
-- `app/backend/schemas.py` — Pydantic request/response models with validation (rejects negative numbers, future dates, and overpayment)
+- `app/backend/insights.py` — plain-language business insight tips engine (`build_tips`) evaluating weekday variations, weekend boosts, month-start salary surges, upcoming rent deadlines, tight-cash warnings, overdue udhaar recovery impact, and expense trends
+- `app/backend/schemas.py` — Pydantic request/response models with validation (rejects negative numbers, future dates, overpayment, plus `TipOut` schema)
 - `app/backend/seed.py` — seeds 4 realistic demo shops with 365 days of history each from `data/` and 28 demo customer credit accounts
-- `app/backend/main.py` — FastAPI application with 12 REST endpoints (including Udhaar management), CORS for localhost:5173, and forecast caching
-- `tests/test_api.py` — 20 pytest tests covering health, shop registration, daily entries, closing cash math, basic/full forecasts (`data_ends_on`), planned-payments date validation, what-if simulation verdicts (`too_large`, `ok`, `better_day_exists`), input validation (`date=4`, `amount=0`, `max_safe_amount`), and complete Udhaar lifecycles (add, partial pay, overpay rejection, auto-close, and overdue summary)
+- `app/backend/main.py` — FastAPI application with 13 REST endpoints (including Udhaar management and `/shops/{id}/tips`), CORS for localhost:5173, and forecast caching
+- `tests/test_api.py` — 25 pytest tests covering health, shop registration, daily entries, closing cash math, basic/full forecasts (`data_ends_on`), planned-payments date validation, what-if simulation verdicts (`too_large`, `ok`, `better_day_exists`), input validation (`date=4`, `amount=0`, `max_safe_amount`), complete Udhaar lifecycles (add, partial pay, overpay rejection, auto-close, overdue summary), and insight tips (weekday accuracy, rent-day appearance, <8-week history skipping, max 5 sorting, and overdue udhaar cash cover)
 - `app/backend/cashflow.db` — seeded local SQLite database
 - `app/frontend/package.json` — React 18, Vite, Tailwind CSS, Recharts, Lucide React dependencies
 - `app/frontend/vite.config.js` — Vite dev server config running on port 5173
 - `app/frontend/tailwind.config.js`, `postcss.config.js` — mobile-first styling and theme setup
 - `app/frontend/index.html` — responsive mobile meta viewport and title
 - `app/frontend/src/config.js` — single config file defining API base URL (`http://127.0.0.1:8000`)
-- `app/frontend/src/api.js` — API client module for all backend endpoints (daily entries, forecasts, what-if, and Udhaar tracking)
-- `app/frontend/src/i18n.js` — everyday language translations in English, Tamil (தமிழ்), and Hindi (हिंदी) across all 4 screens
+- `app/frontend/src/api.js` — API client module for all backend endpoints (daily entries, forecasts, what-if, Udhaar tracking, and tips)
+- `app/frontend/src/i18n.js` — everyday language translations & tip sentence renderers in English, Tamil (தமிழ்), and Hindi (हिंदी) across all screens
 - `app/frontend/src/utils/formatters.js` — Indian numbering rupee formatting (`₹1,25,472`) and color-blind status cues
 - `app/frontend/src/components/StatusBadge.jsx` — color-blind friendly badge (Safe / Watch / Danger) with icons
 - `app/frontend/src/components/CashMeterCard.jsx` — big cash drawer balance card, safety line, and worst-day alert
 - `app/frontend/src/components/ForecastChart.jsx` — 7-day Recharts chart with shaded p10-p90 uncertainty band and dashed safety line
 - `app/frontend/src/components/DayRiskList.jsx` — 7-day breakdown cards with weekday, date, risk %, and status badge
-- `app/frontend/src/components/HomeScreen.jsx` — Tab 1 main dashboard
+- `app/frontend/src/components/TipsCard.jsx` — "Tips for you" business insight card on Home screen with icons, severity badges, and localized advice
+- `app/frontend/src/components/HomeScreen.jsx` — Tab 1 main dashboard with cash meter, chart, day list, and tips card
 - `app/frontend/src/components/EntryFormScreen.jsx` — Tab 2 daily transaction entry with auto-closing cash feedback
 - `app/frontend/src/components/WhatIfScreen.jsx` — Tab 3 scenario planner, max safe amount, and planned payment tracker
 - `app/frontend/src/components/UdhaarScreen.jsx` — Tab 4 customer credit tracker (outstanding balance, overdue alerts, collect today list with inline quick payments, and credit creation form)
@@ -96,6 +98,19 @@ Frontend application & Udhaar (Customer Credit) Tracker complete and live. Added
   - Daily recovery prioritization: `/shops/{id}/udhaar/summary` delivers total outstanding, customer count, overdue sum, top 3 debtor balances, and a "collect today" priority list sorted by largest balance first.
   - Seed dataset: 28 customer credit records (6 tea stall, 6 vegetable shop, 6 tiffin center, 10 kirana) with realistic khata/tab descriptions, seeded idempotently only when the table is empty.
   - Mobile UI (Tab 4): prominent total outstanding balance card, red overdue pill with `AlertOctagon` icon, collect today list with inline 1-click payment box, and a clean credit creation form with full multi-language translations.
+- Plain-Language Insight Tips Architecture:
+  - Module `app/backend/insights.py` exposes `build_tips(shop_id, db=None, forecast=None)` returning structured `{id, icon, severity, text_key, params}` objects.
+  - History guard: skips all tips if entries count is under 8 weeks (56 days) to prevent premature noisy observations.
+  - Pattern rules evaluated:
+    1. Weekday sales difference: compares highest-volume day vs lowest-volume day.
+    2. Weekend vs weekday variation: compares Saturday/Sunday average against Monday-Friday.
+    3. Month-start surge: evaluates days 1-7 salary influx against the remainder of the month.
+    4. Rent day countdown: triggers when 1st of month is within 5 days, calculating expected rent outlay from historical day 1 expenses.
+    5. Tight-cash alert: triggers if the upcoming 7-day forecast worst day has Amber or Red alert status (reusing cached forecast to avoid simulation overhead).
+    6. Overdue udhaar recovery impact: calculates overdue customer debts and expresses total recovery in equivalent days of cash cover.
+    7. Expense trend: flags when last 4 weeks' expenses deviate by > 10% from the previous 4 weeks.
+  - Severity ranking: `danger` (priority 0) > `watch` (priority 1) > `info` (priority 2), sliced to at most 5 tips.
+  - Mobile UI (`TipsCard` on Home Screen): renders each tip with contextual icon, high-contrast severity badge, and localized templates with Indian rupee formatting across English, Tamil, and Hindi.
 - Frontend Architecture (React + Vite + Tailwind + Recharts):
   - Mobile-first responsive layout constrained to 480px width max centered on desktop with large 56px touch targets for phone use.
   - Multi-language everyday wording support (English, தமிழ், हिंदी) toggleable dynamically with zero reload.
@@ -176,4 +191,4 @@ None yet.
 
 ## Next step
 
-plain-language tips.
+Voice entry or WhatsApp share.

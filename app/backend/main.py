@@ -29,6 +29,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.forecast import forecast_cash_risk, FESTIVAL_DATES, collect_cv_residuals, get_best_model_name
 from app.backend.db import get_connection, get_db, init_db
+from app.backend.insights import build_tips
 from app.backend.schemas import (
     DailyEntryCreate,
     DailyEntryOut,
@@ -45,6 +46,7 @@ from app.backend.schemas import (
     UdhaarPaymentCreate,
     UdhaarOut,
     UdhaarSummaryResponse,
+    TipOut,
 )
 
 # Initialize FastAPI application
@@ -1039,3 +1041,39 @@ def get_udhaar_summary(shop_id: int, db: sqlite3.Connection = Depends(get_db)):
         "collect_today": collect_today,
         "top_customers": top_customers,
     }
+
+
+# ============================================================================
+# Plain-Language Insights & Tips Endpoint
+# ============================================================================
+
+@app.get(
+    "/shops/{shop_id}/tips",
+    response_model=List[TipOut],
+    tags=["Insights & Tips"],
+)
+def get_shop_tips(
+    shop_id: int,
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """
+    Return plain-language business insight tips for a shop:
+    - Best and worst selling weekdays
+    - Weekend vs weekday difference
+    - First week of month (days 1-7) salary effect
+    - Upcoming rent warning (if within 5 days of 1st)
+    - Tight cash alert if upcoming forecast worst day is amber or red
+    - Overdue udhaar recovery impact (days of cash cover)
+    - Recent expense trend (last 4w vs prev 4w if >10% change)
+
+    Skips tips if history < 8 weeks. Returns at most 5 tips, sorted by severity (danger > watch > info).
+    """
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    # Reuse cached forecast if available; do not recompute heavy ML simulation
+    cached_fc = _forecast_cache.get(shop_id)
+
+    tips = build_tips(shop_id, db=db, forecast=cached_fc)
+    return tips

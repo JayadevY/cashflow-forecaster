@@ -699,3 +699,104 @@ def test_udhaar_summary_overdue(client):
     # Top customers
     top_names = [c["customer_name"] for c in summary["top_customers"]]
     assert top_names == ["Customer One", "Customer Two", "Customer Three"]
+
+
+# ============================================================================
+# Test 21, 22, 23, 24, 25: Plain-Language Insight Tips Tests
+# ============================================================================
+
+def test_tips_weekday_correct(client):
+    """1. Test that best and worst weekday tip correctly identifies Saturday and Thursday for Kirana."""
+    shop_id = _seed_kirana_shop(client)
+    res = client.get(f"/shops/{shop_id}/tips")
+    assert res.status_code == 200
+    tips = res.json()
+
+    weekday_tip = next((t for t in tips if t["id"] == "best_worst_weekday"), None)
+    assert weekday_tip is not None
+    assert weekday_tip["severity"] == "info"
+    assert weekday_tip["params"]["best_day"] == "Saturday"
+    assert weekday_tip["params"]["worst_day"] == "Thursday"
+    assert weekday_tip["params"]["pct"] == 28
+
+
+def test_tips_rent_day_appears(client):
+    """2. Test that rent day warning appears when the 1st of the month is within 5 days."""
+    shop_id = _seed_kirana_shop(client)
+    res = client.get(f"/shops/{shop_id}/tips")
+    assert res.status_code == 200
+    tips = res.json()
+
+    rent_tip = next((t for t in tips if t["id"] == "rent_day_coming"), None)
+    assert rent_tip is not None
+    assert rent_tip["severity"] == "watch"
+    assert rent_tip["params"]["days"] == 1
+    assert rent_tip["params"]["amount"] > 0
+
+
+def test_tips_empty_when_data_too_short(client):
+    """3. Test that no tips are returned when history is under 8 weeks (56 days)."""
+    shop = client.post("/shops", json={"name": "Short History Shop", "shop_type": "tea_stall"}).json()
+    shop_id = shop["id"]
+
+    # Add only 10 daily entries (< 56 days)
+    start_d = date(2026, 1, 1)
+    for i in range(10):
+        d_str = (start_d + timedelta(days=i)).strftime("%Y-%m-%d")
+        client.post(f"/shops/{shop_id}/entries", json={
+            "date": d_str,
+            "cash_sales": 3000.0,
+            "credit_given": 0.0,
+            "udhaar_collected": 0.0,
+            "expenses": 1500.0,
+        })
+
+    res = client.get(f"/shops/{shop_id}/tips")
+    assert res.status_code == 200
+    assert res.json() == []
+
+
+def test_tips_max_five_and_sorted_severity(client):
+    """4. Test that tips list returns at most 5 tips and is sorted by severity (danger > watch > info)."""
+    shop_id = _seed_kirana_shop(client)
+
+    # Seed overdue udhaar so overdue tip triggers
+    client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Test Debtor",
+        "amount_given": 8000.0,
+        "due_date": "2026-11-01",
+    })
+
+    res = client.get(f"/shops/{shop_id}/tips")
+    assert res.status_code == 200
+    tips = res.json()
+
+    assert len(tips) <= 5
+    assert len(tips) > 0
+
+    severity_order = {"danger": 0, "watch": 1, "info": 2}
+    ranks = [severity_order.get(t["severity"], 3) for t in tips]
+    assert ranks == sorted(ranks), f"Tips not sorted by severity: {[t['severity'] for t in tips]}"
+
+
+def test_tips_overdue_udhaar_appears(client):
+    """5. Test that udhaar tip appears with overdue amount and days of cash cover when overdue exists."""
+    shop_id = _seed_kirana_shop(client)
+
+    client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Overdue Customer",
+        "amount_given": 12000.0,
+        "due_date": "2026-11-05",
+    })
+
+    res = client.get(f"/shops/{shop_id}/tips")
+    assert res.status_code == 200
+    tips = res.json()
+
+    udhaar_tip = next((t for t in tips if t["id"] == "overdue_udhaar"), None)
+    assert udhaar_tip is not None
+    assert udhaar_tip["severity"] == "watch"
+    assert udhaar_tip["params"]["amount"] == 12000
+    assert udhaar_tip["params"]["customers"] == 1
+    assert udhaar_tip["params"]["days_cover"] >= 1
+

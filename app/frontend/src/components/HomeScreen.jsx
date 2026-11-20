@@ -11,6 +11,7 @@ import React from 'react';
 import CashMeterCard from './CashMeterCard';
 import ForecastChart from './ForecastChart';
 import DayRiskList from './DayRiskList';
+import TipsCard from './TipsCard';
 import { RefreshCw } from 'lucide-react';
 
 export default function HomeScreen({
@@ -44,6 +45,13 @@ export default function HomeScreen({
 
       {/* 3. Day-by-Day List */}
       <DayRiskList forecast={forecastData?.forecast} language={language} />
+
+      {/* 4. Plain-Language Insight Tips */}
+      <TipsCard
+        shopId={forecastData?.shop_id}
+        language={language}
+        isRefreshing={isRefreshing}
+      />
     </div>
   );
 }

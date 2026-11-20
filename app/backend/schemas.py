@@ -7,7 +7,7 @@ enforces positive numbers, and rejects invalid dates.
 """
 
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -254,6 +254,19 @@ class UdhaarSummaryResponse(BaseModel):
     overdue_amount: float
     collect_today: List[UdhaarOut]
     top_customers: List[UdhaarTopCustomer]
+
+
+# ============================================================================
+# Insight Tips Schema
+# ============================================================================
+
+class TipOut(BaseModel):
+    """Plain-language business insight tip."""
+    id: str = Field(..., description="Unique identifier of the tip rule")
+    icon: str = Field(..., description="Icon identifier for frontend rendering")
+    severity: str = Field(..., description="'info', 'watch', or 'danger'")
+    text_key: str = Field(..., description="Localization translation key")
+    params: Dict[str, Any] = Field(default_factory=dict, description="Variables for interpolating the tip sentence")
 
 
 # ============================================================================

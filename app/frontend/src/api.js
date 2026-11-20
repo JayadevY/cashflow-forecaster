@@ -154,3 +154,14 @@ export async function recordUdhaarPayment(shopId, uid, paymentData) {
   });
   return handleResponse(res);
 }
+
+/**
+ * 13. Fetch business insight tips for a shop
+ */
+export async function getShopTips(shopId) {
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/tips?_t=${Date.now()}`, {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+  });
+  return handleResponse(res);
+}
