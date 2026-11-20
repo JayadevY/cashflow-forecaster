@@ -4,7 +4,7 @@ Living notes for the Daily Cash-Flow Forecaster. Update this file as the work mo
 
 ## Current phase
 
-Frontend application complete and live. Built mobile-first React + Vite + Tailwind + Recharts UI in `app/frontend/` with 3 screens (Home, Add Today, Plan Payment), Indian rupee formatting, color-blind accessible cues, 3-language toggle (EN / தமிழ் / हिंदी), and live connection to FastAPI backend.
+Frontend application & Udhaar (Customer Credit) Tracker complete and live. Added dedicated Udhaar tracker across backend (SQLite `udhaar` table, 4 REST endpoints, idempotent seed data for 28 demo accounts, 5 unit tests) and mobile-first React UI (4th bottom tab, total outstanding card, red overdue indicator, collect today list with inline payment box, and add credit form in EN/தமிழ்/हिंदी). All 20 API tests passing.
 
 ## Files done
 
@@ -27,19 +27,19 @@ Frontend application complete and live. Built mobile-first React + Vite + Tailwi
 - `reports/alert_backtest.csv` — 52-week backtest performance summary across all shops
 - `reports/alert_backtest_v2.csv` — three-setting backtest comparison table
 - `reports/figures/kirana_alert_example.png` — visual chart of cash uncertainty band and alert threshold
-- `app/backend/db.py` — SQLite database connection helper, schema migrations, and index definitions
-- `app/backend/schemas.py` — Pydantic request/response models with validation (rejects negative numbers and future dates)
-- `app/backend/seed.py` — seeds 4 realistic demo shops with 365 days of history each from `data/`
-- `app/backend/main.py` — FastAPI application with 8 REST endpoints, CORS for localhost:5173, and forecast caching
-- `tests/test_api.py` — 15 pytest tests covering health, shop registration, daily entries, closing cash math, basic/full forecasts (`data_ends_on`), planned-payments date validation, and what-if simulation verdicts + input validation (`date=4`, `amount=0`, `max_safe_amount`)
+- `app/backend/db.py` — SQLite database connection helper, schema migrations, and index definitions (`shops`, `daily_entries`, `planned_payments`, and `udhaar`)
+- `app/backend/schemas.py` — Pydantic request/response models with validation (rejects negative numbers, future dates, and overpayment)
+- `app/backend/seed.py` — seeds 4 realistic demo shops with 365 days of history each from `data/` and 28 demo customer credit accounts
+- `app/backend/main.py` — FastAPI application with 12 REST endpoints (including Udhaar management), CORS for localhost:5173, and forecast caching
+- `tests/test_api.py` — 20 pytest tests covering health, shop registration, daily entries, closing cash math, basic/full forecasts (`data_ends_on`), planned-payments date validation, what-if simulation verdicts (`too_large`, `ok`, `better_day_exists`), input validation (`date=4`, `amount=0`, `max_safe_amount`), and complete Udhaar lifecycles (add, partial pay, overpay rejection, auto-close, and overdue summary)
 - `app/backend/cashflow.db` — seeded local SQLite database
 - `app/frontend/package.json` — React 18, Vite, Tailwind CSS, Recharts, Lucide React dependencies
 - `app/frontend/vite.config.js` — Vite dev server config running on port 5173
 - `app/frontend/tailwind.config.js`, `postcss.config.js` — mobile-first styling and theme setup
 - `app/frontend/index.html` — responsive mobile meta viewport and title
 - `app/frontend/src/config.js` — single config file defining API base URL (`http://127.0.0.1:8000`)
-- `app/frontend/src/api.js` — API client module for all backend endpoints with error handling
-- `app/frontend/src/i18n.js` — everyday language translations in English, Tamil (தமிழ்), and Hindi (हिंदी)
+- `app/frontend/src/api.js` — API client module for all backend endpoints (daily entries, forecasts, what-if, and Udhaar tracking)
+- `app/frontend/src/i18n.js` — everyday language translations in English, Tamil (தமிழ்), and Hindi (हिंदी) across all 4 screens
 - `app/frontend/src/utils/formatters.js` — Indian numbering rupee formatting (`₹1,25,472`) and color-blind status cues
 - `app/frontend/src/components/StatusBadge.jsx` — color-blind friendly badge (Safe / Watch / Danger) with icons
 - `app/frontend/src/components/CashMeterCard.jsx` — big cash drawer balance card, safety line, and worst-day alert
@@ -48,8 +48,9 @@ Frontend application complete and live. Built mobile-first React + Vite + Tailwi
 - `app/frontend/src/components/HomeScreen.jsx` — Tab 1 main dashboard
 - `app/frontend/src/components/EntryFormScreen.jsx` — Tab 2 daily transaction entry with auto-closing cash feedback
 - `app/frontend/src/components/WhatIfScreen.jsx` — Tab 3 scenario planner, max safe amount, and planned payment tracker
+- `app/frontend/src/components/UdhaarScreen.jsx` — Tab 4 customer credit tracker (outstanding balance, overdue alerts, collect today list with inline quick payments, and credit creation form)
 - `app/frontend/src/components/Navbar.jsx` — sticky top bar with shop selector and language switcher
-- `app/frontend/src/components/BottomNav.jsx` — fixed bottom navigation bar with 3 large 56px touch tabs
+- `app/frontend/src/components/BottomNav.jsx` — fixed bottom navigation bar with 4 large touch tabs
 - `app/frontend/src/components/ErrorScreen.jsx` — friendly server offline screen with retry
 - `app/frontend/src/components/LoadingSpinner.jsx` — animated loading spinner
 - `app/frontend/src/App.jsx`, `main.jsx` — main application entry and state coordinator
@@ -88,12 +89,19 @@ Frontend application complete and live. Built mobile-first React + Vite + Tailwi
   - In-memory caching: forecast predictions and residual matrices are cached per shop to make repeated dashboard calls and what-if queries instant; automatically invalidated whenever an entry, payment, or setting changes.
   - Forecast metadata & strict input validation: `/forecast` returns `data_ends_on` (latest entry date); `/what-if` validates `amount > 0` and real `YYYY-MM-DD` date inside the 7-day forecast window before running any model (HTTP 422 otherwise); `POST /planned-payments` enforces real `YYYY-MM-DD` dates not more than 60 days ahead (HTTP 422 otherwise).
   - What-If optimization: tests user-proposed bills across the 7-day horizon, returns a clear `verdict` (`too_large` if every day exceeds 80% peak risk, `better_day_exists` if another day is safer, or `ok` if the chosen day is safest), and computes `max_safe_amount` (largest multiple of ₹1,000 up to current cash on the chosen date keeping peak risk < 20%; always >= requested amount if safe, 0 only if even ₹1,000 is unsafe).
+- Udhaar (Customer Credit) Tracker Architecture:
+  - Table schema: `udhaar(id, shop_id, customer_name, amount_given, amount_paid DEFAULT 0, given_date, due_date, note, status 'open'|'closed')` created via `CREATE TABLE IF NOT EXISTS` with index on `(shop_id, status)` and `(shop_id, due_date)`.
+  - Payment validation: enforces payments >= ₹1 and <= outstanding balance (`amount_given - amount_paid`); automatically transitions status to `'closed'` when remaining balance reaches ₹0.
+  - Overdue classification: any open credit with `due_date < today` is marked overdue with `days_overdue = (today - due_date).days`.
+  - Daily recovery prioritization: `/shops/{id}/udhaar/summary` delivers total outstanding, customer count, overdue sum, top 3 debtor balances, and a "collect today" priority list sorted by largest balance first.
+  - Seed dataset: 28 customer credit records (6 tea stall, 6 vegetable shop, 6 tiffin center, 10 kirana) with realistic khata/tab descriptions, seeded idempotently only when the table is empty.
+  - Mobile UI (Tab 4): prominent total outstanding balance card, red overdue pill with `AlertOctagon` icon, collect today list with inline 1-click payment box, and a clean credit creation form with full multi-language translations.
 - Frontend Architecture (React + Vite + Tailwind + Recharts):
   - Mobile-first responsive layout constrained to 480px width max centered on desktop with large 56px touch targets for phone use.
   - Multi-language everyday wording support (English, தமிழ், हिंदी) toggleable dynamically with zero reload.
   - Color-blind accessible indicators: every status pairs a distinct shape icon (Check, Triangle, Octagon) with an explicit text label (Safe, Watch, Danger) and high-contrast color styling.
   - Indian numbering system: all currency amounts formatted with standard Indian commas (`₹1,25,472`).
-  - Seamless 3-tab flow: Tab 1 Home (meter card, Recharts 7-day projection band, day list), Tab 2 Add Today (daily bookkeeping with automatic closing cash calculation), Tab 3 Plan Payment (interactive what-if scenario testing and planned payment tracking).
+  - Seamless 4-tab flow: Tab 1 Home (meter card, Recharts 7-day projection band, day list), Tab 2 Add Today (daily bookkeeping with automatic closing cash calculation), Tab 3 Plan Payment (interactive what-if scenario testing and planned payment tracking), Tab 4 Udhaar (customer credit tracker and recovery queue).
 
 ## Results
 
@@ -168,4 +176,4 @@ None yet.
 
 ## Next step
 
-Phase 7 extras: udhaar tracker, voice entry, WhatsApp share.
+plain-language tips.

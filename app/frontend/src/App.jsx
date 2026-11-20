@@ -15,6 +15,7 @@ import BottomNav from './components/BottomNav';
 import HomeScreen from './components/HomeScreen';
 import EntryFormScreen from './components/EntryFormScreen';
 import WhatIfScreen from './components/WhatIfScreen';
+import UdhaarScreen from './components/UdhaarScreen';
 import LoadingSpinner from './components/LoadingSpinner';
 import ErrorScreen from './components/ErrorScreen';
 import { getShops, getForecast } from './api';
@@ -163,6 +164,13 @@ export default function App() {
                   forecastData={forecastData}
                   language={language}
                   onPlanUpdated={handlePlanUpdated}
+                />
+              )}
+
+              {activeTab === 'udhaar' && (
+                <UdhaarScreen
+                  shopId={selectedShopId}
+                  language={language}
                 />
               )}
             </>

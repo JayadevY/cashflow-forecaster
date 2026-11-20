@@ -98,7 +98,24 @@ def init_db(db_path: Path = None) -> None:
             );
         """)
 
-        # Helpful index for fast queries by shop and date
+        # Table 4: Udhaar (Customer Credit Tracker)
+        # Keeps track of money owed by customers to the shopkeeper
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS udhaar (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shop_id INTEGER NOT NULL,
+                customer_name TEXT NOT NULL,
+                amount_given REAL NOT NULL,
+                amount_paid REAL NOT NULL DEFAULT 0.0,
+                given_date TEXT NOT NULL,
+                due_date TEXT,
+                note TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
+            );
+        """)
+
+        # Helpful indexes for fast queries
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_daily_entries_shop_date
             ON daily_entries(shop_id, date);
@@ -106,6 +123,14 @@ def init_db(db_path: Path = None) -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_planned_payments_shop_date
             ON planned_payments(shop_id, date);
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_udhaar_shop_status
+            ON udhaar(shop_id, status);
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_udhaar_shop_due
+            ON udhaar(shop_id, due_date);
         """)
 
     conn.close()

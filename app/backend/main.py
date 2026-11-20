@@ -41,6 +41,10 @@ from app.backend.schemas import (
     ShopOut,
     ShopSettingsUpdate,
     WhatIfResponse,
+    UdhaarCreate,
+    UdhaarPaymentCreate,
+    UdhaarOut,
+    UdhaarSummaryResponse,
 )
 
 # Initialize FastAPI application
@@ -799,4 +803,239 @@ def what_if_payment_scenario(
         "safest_day_peak_risk": round(best_peak_risk, 1),
         "recommendation": rec,
         "forecast": req_forecast,
+    }
+
+
+# ============================================================================
+# 9. Udhaar (Customer Credit Tracker) Endpoints
+# ============================================================================
+
+def _format_udhaar_row(row: sqlite3.Row) -> dict:
+    """Helper to convert a database row into an UdhaarOut dictionary with balance and days_overdue."""
+    given = float(row["amount_given"])
+    paid = float(row["amount_paid"])
+    balance = round(max(0.0, given - paid), 2)
+
+    days_overdue = 0
+    if row["due_date"] and row["status"] == "open":
+        try:
+            due_dt = datetime.strptime(str(row["due_date"]), "%Y-%m-%d").date()
+            today_dt = datetime.today().date()
+            if due_dt < today_dt:
+                days_overdue = (today_dt - due_dt).days
+        except ValueError:
+            pass
+
+    return {
+        "id": row["id"],
+        "shop_id": row["shop_id"],
+        "customer_name": row["customer_name"],
+        "amount_given": given,
+        "amount_paid": paid,
+        "balance": balance,
+        "given_date": str(row["given_date"]),
+        "due_date": str(row["due_date"]) if row["due_date"] else None,
+        "days_overdue": days_overdue,
+        "note": str(row["note"]) if row["note"] else None,
+        "status": row["status"],
+    }
+
+
+@app.post(
+    "/shops/{shop_id}/udhaar",
+    response_model=UdhaarOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Udhaar Tracker"],
+)
+def add_udhaar_entry(
+    shop_id: int, entry_in: UdhaarCreate, db: sqlite3.Connection = Depends(get_db)
+):
+    """Record credit (udhaar) given to a customer."""
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    given_date = entry_in.given_date or datetime.today().strftime("%Y-%m-%d")
+
+    with db:
+        cursor = db.execute(
+            """
+            INSERT INTO udhaar (
+                shop_id, customer_name, amount_given, amount_paid,
+                given_date, due_date, note, status
+            ) VALUES (?, ?, ?, 0.0, ?, ?, ?, 'open')
+            """,
+            (
+                shop_id,
+                entry_in.customer_name,
+                entry_in.amount_given,
+                given_date,
+                entry_in.due_date,
+                entry_in.note,
+            ),
+        )
+        uid = cursor.lastrowid
+        row = db.execute("SELECT * FROM udhaar WHERE id = ?", (uid,)).fetchone()
+
+    return _format_udhaar_row(row)
+
+
+@app.get(
+    "/shops/{shop_id}/udhaar",
+    response_model=List[UdhaarOut],
+    tags=["Udhaar Tracker"],
+)
+def list_udhaar_entries(
+    shop_id: int,
+    status: Optional[str] = Query("open", description="Filter by status ('open', 'closed', or 'all')"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """List customer credit entries with computed balance."""
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    if status and status != "all":
+        rows = db.execute(
+            """
+            SELECT * FROM udhaar
+            WHERE shop_id = ? AND status = ?
+            ORDER BY given_date DESC, id DESC
+            """,
+            (shop_id, status),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT * FROM udhaar
+            WHERE shop_id = ?
+            ORDER BY given_date DESC, id DESC
+            """,
+            (shop_id,),
+        ).fetchall()
+
+    return [_format_udhaar_row(r) for r in rows]
+
+
+@app.post(
+    "/shops/{shop_id}/udhaar/{uid}/payment",
+    response_model=UdhaarOut,
+    tags=["Udhaar Tracker"],
+)
+def record_udhaar_payment(
+    shop_id: int,
+    uid: int,
+    payment_in: UdhaarPaymentCreate,
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """
+    Record customer payment against an open credit entry.
+    - Rejects amounts below 1 or amounts above the outstanding balance.
+    - Automatically marks the entry 'closed' when balance reaches 0.
+    """
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    with db:
+        row = db.execute(
+            "SELECT * FROM udhaar WHERE id = ? AND shop_id = ?",
+            (uid, shop_id),
+        ).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Udhaar entry #{uid} not found for this shop.")
+
+        if row["status"] == "closed":
+            raise HTTPException(status_code=400, detail="This udhaar entry is already fully paid and closed.")
+
+        current_balance = round(float(row["amount_given"]) - float(row["amount_paid"]), 2)
+
+        if payment_in.amount < 1.0:
+            raise HTTPException(status_code=422, detail="Payment amount must be at least ₹1.")
+
+        if payment_in.amount > current_balance:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Payment amount (₹{int(payment_in.amount):,}) cannot exceed outstanding balance (₹{int(current_balance):,}).",
+            )
+
+        new_paid = round(float(row["amount_paid"]) + float(payment_in.amount), 2)
+        new_balance = round(float(row["amount_given"]) - new_paid, 2)
+        new_status = "closed" if new_balance <= 0 else "open"
+
+        db.execute(
+            "UPDATE udhaar SET amount_paid = ?, status = ? WHERE id = ?",
+            (new_paid, new_status, uid),
+        )
+        updated = db.execute("SELECT * FROM udhaar WHERE id = ?", (uid,)).fetchone()
+
+    return _format_udhaar_row(updated)
+
+
+@app.get(
+    "/shops/{shop_id}/udhaar/summary",
+    response_model=UdhaarSummaryResponse,
+    tags=["Udhaar Tracker"],
+)
+def get_udhaar_summary(shop_id: int, db: sqlite3.Connection = Depends(get_db)):
+    """
+    Return high-level udhaar credit summary:
+    - total outstanding balance
+    - number of customers with open credit
+    - overdue amount (due_date before today)
+    - 'collect today' list (due today or overdue, largest balance first)
+    - top 3 customers by total balance
+    """
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    rows = db.execute(
+        "SELECT * FROM udhaar WHERE shop_id = ? AND status = 'open'",
+        (shop_id,),
+    ).fetchall()
+
+    today_dt = datetime.today().date()
+    total_outstanding = 0.0
+    customer_names = set()
+    overdue_amount = 0.0
+    collect_today = []
+    cust_balances = {}
+
+    for r in rows:
+        bal = round(float(r["amount_given"]) - float(r["amount_paid"]), 2)
+        if bal <= 0:
+            continue
+
+        total_outstanding += bal
+        cname = str(r["customer_name"])
+        customer_names.add(cname)
+        cust_balances[cname] = cust_balances.get(cname, 0.0) + bal
+
+        formatted = _format_udhaar_row(r)
+        if r["due_date"]:
+            try:
+                due_dt = datetime.strptime(str(r["due_date"]), "%Y-%m-%d").date()
+                if due_dt <= today_dt:
+                    collect_today.append(formatted)
+                    if due_dt < today_dt:
+                        overdue_amount += bal
+            except ValueError:
+                pass
+
+    # Sort 'collect today' list: largest balance first
+    collect_today.sort(key=lambda x: x["balance"], reverse=True)
+
+    # Top 3 customers by balance
+    sorted_custs = sorted(cust_balances.items(), key=lambda x: x[1], reverse=True)[:3]
+    top_customers = [{"customer_name": k, "balance": round(v, 2)} for k, v in sorted_custs]
+
+    return {
+        "shop_id": shop_id,
+        "total_outstanding": round(total_outstanding, 2),
+        "customer_count": len(customer_names),
+        "overdue_amount": round(overdue_amount, 2),
+        "collect_today": collect_today,
+        "top_customers": top_customers,
     }

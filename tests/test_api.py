@@ -520,3 +520,182 @@ def test_planned_payment_date_check_and_forecast_data_ends_on(client):
     f_res = client.get(f"/shops/{shop_id}/forecast")
     assert f_res.status_code == 200
     assert f_res.json()["data_ends_on"] == "2026-10-31"
+
+
+# ============================================================================
+# Test 16 - 20: Udhaar (Customer Credit Tracker) Tests
+# ============================================================================
+
+def test_udhaar_add(client):
+    """1. Test adding an open udhaar credit entry."""
+    shop = client.post("/shops", json={"name": "Udhaar Shop", "shop_type": "tea_stall"}).json()
+    shop_id = shop["id"]
+
+    res = client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Ramesh Kumar",
+        "amount_given": 3500.0,
+        "given_date": "2026-11-10",
+        "due_date": "2026-11-20",
+        "note": "Office tea pass",
+    })
+    assert res.status_code == 201
+    data = res.json()
+    assert data["customer_name"] == "Ramesh Kumar"
+    assert data["amount_given"] == 3500.0
+    assert data["amount_paid"] == 0.0
+    assert data["balance"] == 3500.0
+    assert data["status"] == "open"
+
+    # Verify listing open credits returns this entry
+    list_res = client.get(f"/shops/{shop_id}/udhaar?status=open")
+    assert list_res.status_code == 200
+    entries = list_res.json()
+    assert len(entries) == 1
+    assert entries[0]["id"] == data["id"]
+    assert entries[0]["balance"] == 3500.0
+
+
+def test_udhaar_partial_payment(client):
+    """2. Test recording a partial payment against open udhaar."""
+    shop = client.post("/shops", json={"name": "Udhaar Shop", "shop_type": "kirana"}).json()
+    shop_id = shop["id"]
+
+    entry = client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Suresh Painter",
+        "amount_given": 5000.0,
+        "given_date": "2026-11-05",
+        "due_date": "2026-11-15",
+    }).json()
+    uid = entry["id"]
+
+    # Record partial payment of 2,000
+    pay_res = client.post(f"/shops/{shop_id}/udhaar/{uid}/payment", json={
+        "amount": 2000.0,
+        "note": "Partial cash payment",
+    })
+    assert pay_res.status_code == 200
+    updated = pay_res.json()
+    assert updated["amount_given"] == 5000.0
+    assert updated["amount_paid"] == 2000.0
+    assert updated["balance"] == 3000.0
+    assert updated["status"] == "open"
+
+
+def test_udhaar_overpay_rejected(client):
+    """3. Test that payment amount above balance or below 1 is rejected (HTTP 422)."""
+    shop = client.post("/shops", json={"name": "Udhaar Shop", "shop_type": "vegetable_shop"}).json()
+    shop_id = shop["id"]
+
+    entry = client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Hotel Priya",
+        "amount_given": 4000.0,
+    }).json()
+    uid = entry["id"]
+
+    # Overpayment rejected
+    overpay_res = client.post(f"/shops/{shop_id}/udhaar/{uid}/payment", json={
+        "amount": 4001.0,
+    })
+    assert overpay_res.status_code == 422
+    assert "cannot exceed outstanding balance" in overpay_res.json()["detail"]
+
+    # Less than 1 rejected
+    underpay_res = client.post(f"/shops/{shop_id}/udhaar/{uid}/payment", json={
+        "amount": 0.5,
+    })
+    assert underpay_res.status_code == 422
+
+
+def test_udhaar_close_on_full_payment(client):
+    """4. Test that entry automatically closes when balance reaches 0."""
+    shop = client.post("/shops", json={"name": "Udhaar Shop", "shop_type": "tiffin_center"}).json()
+    shop_id = shop["id"]
+
+    entry = client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Balaji Driver",
+        "amount_given": 1500.0,
+    }).json()
+    uid = entry["id"]
+
+    # Pay full amount
+    full_pay_res = client.post(f"/shops/{shop_id}/udhaar/{uid}/payment", json={
+        "amount": 1500.0,
+    })
+    assert full_pay_res.status_code == 200
+    closed_entry = full_pay_res.json()
+    assert closed_entry["amount_paid"] == 1500.0
+    assert closed_entry["balance"] == 0.0
+    assert closed_entry["status"] == "closed"
+
+    # Verify not in open list, but in closed list
+    open_list = client.get(f"/shops/{shop_id}/udhaar?status=open").json()
+    assert len(open_list) == 0
+
+    closed_list = client.get(f"/shops/{shop_id}/udhaar?status=closed").json()
+    assert len(closed_list) == 1
+    assert closed_list[0]["id"] == uid
+
+    # Paying on already closed entry should be rejected
+    repay_res = client.post(f"/shops/{shop_id}/udhaar/{uid}/payment", json={"amount": 100.0})
+    assert repay_res.status_code == 400
+
+
+def test_udhaar_summary_overdue(client):
+    """5. Test summary calculations: total outstanding, customer count, overdue amount, collect today list."""
+    shop = client.post("/shops", json={"name": "Udhaar Shop", "shop_type": "kirana"}).json()
+    shop_id = shop["id"]
+
+    # Customer 1: 5,000 given, overdue (due Nov 1)
+    e1 = client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Customer One",
+        "amount_given": 5000.0,
+        "due_date": "2026-11-01",
+    }).json()
+    # Partial payment of 1,000 -> balance 4,000
+    client.post(f"/shops/{shop_id}/udhaar/{e1['id']}/payment", json={"amount": 1000.0})
+
+    # Customer 2: 3,000 given, overdue (due Nov 10) -> balance 3,000
+    client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Customer Two",
+        "amount_given": 3000.0,
+        "due_date": "2026-11-10",
+    })
+
+    # Customer 3: 2,000 given, upcoming due date (due Dec 15, not overdue) -> balance 2,000
+    client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Customer Three",
+        "amount_given": 2000.0,
+        "due_date": "2026-12-15",
+    })
+
+    # Customer 4: 1,000 given, fully paid (closed) -> balance 0
+    e4 = client.post(f"/shops/{shop_id}/udhaar", json={
+        "customer_name": "Customer Four",
+        "amount_given": 1000.0,
+        "due_date": "2026-11-05",
+    }).json()
+    client.post(f"/shops/{shop_id}/udhaar/{e4['id']}/payment", json={"amount": 1000.0})
+
+    # Fetch summary
+    summary_res = client.get(f"/shops/{shop_id}/udhaar/summary")
+    assert summary_res.status_code == 200
+    summary = summary_res.json()
+
+    # Total outstanding = 4,000 + 3,000 + 2,000 = 9,000
+    assert summary["total_outstanding"] == 9000.0
+    # Customer count = 3 (One, Two, Three)
+    assert summary["customer_count"] == 3
+    # Overdue amount = 4,000 (One) + 3,000 (Two) = 7,000
+    assert summary["overdue_amount"] == 7000.0
+
+    # Collect today list should have Customer One (4,000) and Customer Two (3,000)
+    assert len(summary["collect_today"]) == 2
+    assert summary["collect_today"][0]["customer_name"] == "Customer One"
+    assert summary["collect_today"][0]["balance"] == 4000.0
+    assert summary["collect_today"][0]["days_overdue"] > 0
+    assert summary["collect_today"][1]["customer_name"] == "Customer Two"
+    assert summary["collect_today"][1]["balance"] == 3000.0
+
+    # Top customers
+    top_names = [c["customer_name"] for c in summary["top_customers"]]
+    assert top_names == ["Customer One", "Customer Two", "Customer Three"]

@@ -108,3 +108,49 @@ export async function checkWhatIf(shopId, date, amount) {
   const res = await fetch(`${API_BASE_URL}/shops/${shopId}/what-if?${params.toString()}`);
   return handleResponse(res);
 }
+
+/**
+ * 9. Fetch udhaar credit summary (outstanding, overdue, collect today, top customers)
+ */
+export async function getUdhaarSummary(shopId) {
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/udhaar/summary?_t=${Date.now()}`, {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+  });
+  return handleResponse(res);
+}
+
+/**
+ * 10. List udhaar customer credit entries
+ */
+export async function getUdhaarEntries(shopId, status = 'open') {
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/udhaar?status=${status}&_t=${Date.now()}`, {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+  });
+  return handleResponse(res);
+}
+
+/**
+ * 11. Add a new customer credit entry (udhaar given)
+ */
+export async function addUdhaar(shopId, udhaarData) {
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/udhaar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(udhaarData),
+  });
+  return handleResponse(res);
+}
+
+/**
+ * 12. Record payment collected against customer udhaar
+ */
+export async function recordUdhaarPayment(shopId, uid, paymentData) {
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/udhaar/${uid}/payment`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(paymentData),
+  });
+  return handleResponse(res);
+}

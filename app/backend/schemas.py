@@ -175,6 +175,88 @@ class WhatIfResponse(BaseModel):
 
 
 # ============================================================================
+# Udhaar (Credit Tracker) Schemas
+# ============================================================================
+
+class UdhaarCreate(BaseModel):
+    """Data sent by shop owner to record credit (udhaar) given to a customer."""
+    customer_name: str = Field(..., min_length=1, description="Customer name (cannot be blank)")
+    amount_given: float = Field(..., gt=0, description="Rupee amount of credit given (must be > 0)")
+    given_date: Optional[str] = Field(None, description="Date credit was given in YYYY-MM-DD (defaults to today)")
+    due_date: Optional[str] = Field(None, description="Optional repayment due date in YYYY-MM-DD")
+    note: Optional[str] = Field(None, description="Optional items or reason, e.g. 'Rice and oil'")
+
+    @field_validator("customer_name")
+    def validate_customer_name(cls, v: str) -> str:
+        trimmed = v.strip()
+        if not trimmed:
+            raise ValueError("customer_name cannot be blank")
+        return trimmed
+
+    @field_validator("given_date")
+    def validate_given_date(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            try:
+                d = datetime.strptime(v, "%Y-%m-%d").date()
+                if v != d.strftime("%Y-%m-%d"):
+                    raise ValueError
+            except ValueError:
+                raise ValueError("given_date must be formatted as YYYY-MM-DD")
+        return v
+
+    @field_validator("due_date")
+    def validate_due_date(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            try:
+                d = datetime.strptime(v, "%Y-%m-%d").date()
+                if v != d.strftime("%Y-%m-%d"):
+                    raise ValueError
+            except ValueError:
+                raise ValueError("due_date must be formatted as YYYY-MM-DD")
+        return v
+
+
+class UdhaarPaymentCreate(BaseModel):
+    """Payment recorded against an open udhaar credit entry."""
+    amount: float = Field(..., ge=1.0, description="Amount collected from customer (must be >= 1)")
+    note: Optional[str] = Field(None, description="Optional note, e.g. 'Cash payment'")
+
+
+class UdhaarOut(BaseModel):
+    """Customer credit record returned to user."""
+    id: int
+    shop_id: int
+    customer_name: str
+    amount_given: float
+    amount_paid: float
+    balance: float
+    given_date: str
+    due_date: Optional[str] = None
+    days_overdue: int = 0
+    note: Optional[str] = None
+    status: str
+
+    class Config:
+        from_attributes = True
+
+
+class UdhaarTopCustomer(BaseModel):
+    """Aggregated top customer balance."""
+    customer_name: str
+    balance: float
+
+
+class UdhaarSummaryResponse(BaseModel):
+    """Overall credit summary for the shop."""
+    shop_id: int
+    total_outstanding: float
+    customer_count: int
+    overdue_amount: float
+    collect_today: List[UdhaarOut]
+    top_customers: List[UdhaarTopCustomer]
+
+
+# ============================================================================
 # System Health Schema
 # ============================================================================
 

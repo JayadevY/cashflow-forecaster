@@ -144,6 +144,83 @@ def seed_database(db_path: Path = None) -> None:
                     f"Threshold: Rs {int(threshold):,} | Latest Cash: Rs {int(latest_cash):,}"
                 )
 
+            # Seed Udhaar demo customers ONLY when the udhaar table is completely empty
+            udhaar_count = conn.execute("SELECT COUNT(*) AS c FROM udhaar").fetchone()["c"]
+            if udhaar_count == 0:
+                print("\n--> Seeding demo Udhaar credit records...")
+                # Fetch shop IDs by type
+                shops_by_type = {
+                    r["shop_type"]: r["id"]
+                    for r in conn.execute("SELECT id, shop_type FROM shops").fetchall()
+                }
+
+                demo_udhaar_records = []
+
+                # 1. Tea Stall (6 demo customers: monthly office pass, tea tokens, snacks)
+                ts_id = shops_by_type.get("tea_stall")
+                if ts_id:
+                    demo_udhaar_records.extend([
+                        (ts_id, "Ravi Auto Driver", 450.0, 150.0, "2026-11-02", "2026-11-12", "Weekly tea & biscuit tab", "open"),
+                        (ts_id, "Sharma Tailors", 1200.0, 0.0, "2026-11-05", "2026-11-15", "Shop staff evening tea", "open"),
+                        (ts_id, "Kumar Electrician", 350.0, 0.0, "2026-11-14", "2026-11-20", "Tea and vadai", "open"),
+                        (ts_id, "Deepak Courier", 600.0, 200.0, "2026-11-16", "2026-11-26", "Monthly tea account", "open"),
+                        (ts_id, "Mani Plumber", 250.0, 0.0, "2026-11-18", None, "Snacks & ginger tea", "open"),
+                        (ts_id, "Suresh Xerox", 500.0, 500.0, "2026-10-25", "2026-11-05", "Cleared on Monday", "closed"),
+                    ])
+
+                # 2. Vegetable Shop (6 demo customers: restaurant orders, neighbors)
+                vs_id = shops_by_type.get("vegetable_shop")
+                if vs_id:
+                    demo_udhaar_records.extend([
+                        (vs_id, "Hotel Sangeetha", 3200.0, 1000.0, "2026-11-03", "2026-11-10", "Bulk onions & tomatoes", "open"),
+                        (vs_id, "Lakshmi Amma (3rd Cross)", 850.0, 0.0, "2026-11-06", "2026-11-16", "Weekly kitchen veggies", "open"),
+                        (vs_id, "Ganesh Fast Food", 1800.0, 500.0, "2026-11-10", "2026-11-20", "Cabbage, capsicum sacks", "open"),
+                        (vs_id, "Meena Teacher", 650.0, 0.0, "2026-11-15", "2026-11-25", "Monthly greens and veggies", "open"),
+                        (vs_id, "Appu Juice Shop", 1400.0, 0.0, "2026-11-17", None, "Mint and ginger box", "open"),
+                        (vs_id, "Karthik Caterer", 2500.0, 2500.0, "2026-10-28", "2026-11-08", "Function supply (settled)", "closed"),
+                    ])
+
+                # 3. Tiffin Center (6 demo customers: hostel students, regular breakfast)
+                tc_id = shops_by_type.get("tiffin_center")
+                if tc_id:
+                    demo_udhaar_records.extend([
+                        (tc_id, "Vignesh (Hostel #4)", 2100.0, 600.0, "2026-11-01", "2026-11-11", "Monthly mess fees balance", "open"),
+                        (tc_id, "Sri Ram Builders", 4500.0, 1500.0, "2026-11-04", "2026-11-14", "Worker lunch packets (20 nos)", "open"),
+                        (tc_id, "Pooja Software", 1250.0, 0.0, "2026-11-09", "2026-11-20", "Daily tiffin dabba", "open"),
+                        (tc_id, "Anbarasan Driver", 700.0, 200.0, "2026-11-15", "2026-11-27", "Idli and parotta pack", "open"),
+                        (tc_id, "Balaji Gym", 1600.0, 0.0, "2026-11-18", None, "Egg whites and chapati pass", "open"),
+                        (tc_id, "Murugesh Mason", 1100.0, 1100.0, "2026-10-29", "2026-11-05", "Cleared on Diwali eve", "closed"),
+                    ])
+
+                # 4. Kirana Store (10 demo customers: family monthly khata / grocery accounts)
+                ks_id = shops_by_type.get("kirana")
+                if ks_id:
+                    demo_udhaar_records.extend([
+                        (ks_id, "Ramesh Kumar (House 12)", 5500.0, 1500.0, "2026-11-02", "2026-11-12", "Monthly rice, oil, atta pack", "open"),
+                        (ks_id, "Senthil Auto Consultant", 8200.0, 2000.0, "2026-11-03", "2026-11-13", "House grocery and provisions", "open"),
+                        (ks_id, "Radha Akka (Flat 2B)", 3400.0, 0.0, "2026-11-07", "2026-11-17", "Ghee, dry fruits and masala", "open"),
+                        (ks_id, "Muthu Carpenter", 2800.0, 800.0, "2026-11-11", "2026-11-20", "Provisions and detergent box", "open"),
+                        (ks_id, "Dr. Arvind Clinic", 6200.0, 0.0, "2026-11-12", "2026-11-22", "Coffee, sugar, soap packs", "open"),
+                        (ks_id, "Kala Madam (School)", 4100.0, 1000.0, "2026-11-14", "2026-11-25", "Snacks and stationery groceries", "open"),
+                        (ks_id, "Saravanan Painter", 1950.0, 0.0, "2026-11-16", "2026-11-28", "Rice bag & cooking oil", "open"),
+                        (ks_id, "Shanthi Tailor", 2200.0, 0.0, "2026-11-18", None, "Monthly dal, tamarind, spices", "open"),
+                        (ks_id, "Naveen IT Student", 1500.0, 1500.0, "2026-10-26", "2026-11-06", "Hostel snacks (settled in full)", "closed"),
+                        (ks_id, "Pravin Bakery", 9000.0, 9000.0, "2026-10-20", "2026-11-01", "Maida and sugar bags (paid)", "closed"),
+                    ])
+
+                conn.executemany(
+                    """
+                    INSERT INTO udhaar (
+                        shop_id, customer_name, amount_given, amount_paid,
+                        given_date, due_date, note, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    demo_udhaar_records,
+                )
+                print(f"✓ Seeded {len(demo_udhaar_records)} demo udhaar credit records across all 4 shops.")
+            else:
+                print(f"ℹ Udhaar table already has {udhaar_count} records. Keeping existing data.")
+
         print("\n--> Database seeding completed successfully!")
     finally:
         conn.close()
