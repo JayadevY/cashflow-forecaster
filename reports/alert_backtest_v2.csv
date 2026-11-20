@@ -1,0 +1,13 @@
+shop_type,setting,crises,alerts,true_positives,false_positives,precision,recall
+tea_stall,A (As-is),17,4,4,0,100.0%,23.5%
+tea_stall,B (Forecastable-only),4,4,4,0,100.0%,100.0%
+tea_stall,C (Owner-informed),17,18,15,3,83.3%,88.2%
+vegetable_shop,A (As-is),11,6,5,1,83.3%,45.5%
+vegetable_shop,B (Forecastable-only),4,6,4,2,66.7%,100.0%
+vegetable_shop,C (Owner-informed),11,6,5,1,83.3%,45.5%
+tiffin_center,A (As-is),16,1,1,0,100.0%,6.2%
+tiffin_center,B (Forecastable-only),0,1,0,1,0.0%,0.0%
+tiffin_center,C (Owner-informed),16,17,15,2,88.2%,93.8%
+kirana,A (As-is),9,13,9,4,69.2%,100.0%
+kirana,B (Forecastable-only),8,13,8,5,61.5%,100.0%
+kirana,C (Owner-informed),9,13,9,4,69.2%,100.0%

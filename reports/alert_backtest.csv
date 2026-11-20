@@ -1,0 +1,5 @@
+shop_type,best_model,total_windows,sales_p10_p90_coverage,actual_low_cash_windows,alerts_issued,true_positives,false_positives,false_negatives,precision,recall
+tea_stall,xgboost,52,78.8%,17,4,4,0,13,100.0%,23.5%
+vegetable_shop,xgboost,52,66.2%,11,6,5,1,6,83.3%,45.5%
+tiffin_center,arima,52,72.8%,16,1,1,0,15,100.0%,6.2%
+kirana,arima,52,72.5%,9,13,9,4,0,69.2%,100.0%

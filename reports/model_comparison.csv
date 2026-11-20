@@ -1,0 +1,17 @@
+shop_type,model,MAE,MAE_std,MAPE,MAPE_std
+tea_stall,moving_average,805.43,491.65,15.13,6.19
+tea_stall,seasonal_naive,904.89,486.04,17.13,6.67
+tea_stall,arima,551.0,192.0,10.73,3.42
+tea_stall,xgboost,512.36,131.23,9.86,2.46
+vegetable_shop,moving_average,2475.24,1083.91,19.91,7.28
+vegetable_shop,seasonal_naive,2251.91,1068.42,18.36,6.21
+vegetable_shop,arima,1473.15,501.38,12.23,2.57
+vegetable_shop,xgboost,1320.47,403.39,10.7,2.87
+tiffin_center,moving_average,2752.37,2026.63,17.22,8.48
+tiffin_center,seasonal_naive,3151.5,1964.7,19.99,8.43
+tiffin_center,arima,1583.47,417.34,10.46,2.09
+tiffin_center,xgboost,1630.19,536.2,10.48,2.36
+kirana,moving_average,4126.77,3052.84,18.31,8.41
+kirana,seasonal_naive,4450.91,3127.74,19.95,9.93
+kirana,arima,2697.81,450.47,12.45,2.69
+kirana,xgboost,2955.11,1422.35,12.89,3.62

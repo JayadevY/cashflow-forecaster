@@ -1,0 +1,15 @@
+# SQLite database files
+app/backend/cashflow.db
+*.db
+*.sqlite3
+
+# Python environment & cache
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+node_modules/
+dist/
+scratch/
+.DS_Store
