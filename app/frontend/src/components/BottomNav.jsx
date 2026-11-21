@@ -11,7 +11,7 @@
  */
 
 import React from 'react';
-import { Home, PlusCircle, CalendarClock, BookOpen } from 'lucide-react';
+import { Home, PlusCircle, CalendarClock, BookOpen, CreditCard } from 'lucide-react';
 import { TRANSLATIONS } from '../i18n';
 
 export default function BottomNav({ activeTab, onTabChange, language = 'en' }) {
@@ -19,14 +19,15 @@ export default function BottomNav({ activeTab, onTabChange, language = 'en' }) {
 
   const tabs = [
     { id: 'home', label: t.tabHome, icon: Home },
+    { id: 'payments', label: t.tabPayments, icon: CreditCard },
     { id: 'add', label: t.tabAddToday, icon: PlusCircle },
     { id: 'plan', label: t.tabPlanPayment, icon: CalendarClock },
     { id: 'udhaar', label: t.tabUdhaar, icon: BookOpen },
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
-      <div className="max-w-[480px] mx-auto grid grid-cols-4 gap-1 px-1 py-1">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+      <div className="max-w-[480px] mx-auto grid grid-cols-5 gap-0.5 px-1 py-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;

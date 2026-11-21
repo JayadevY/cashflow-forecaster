@@ -9,10 +9,14 @@
  * 2. 'Collect Today' List:
  *    - Customers whose repayment is due today or overdue
  *    - Shows customer name, balance, and days overdue
- *    - Big 'Got Payment' button that opens a small amount input (defaults to full balance)
+ *    - 'Got Payment' button that opens a small amount input (defaults to full balance)
  * 3. 'Add Credit' Form:
- *    - Customer name, amount, and optional due date
+ *    - Customer name, amount, optional due date and note
  * 4. Multi-language support (English, தமிழ், हिंदी)
+ *
+ * Responsive on lg and up:
+ * - Left column (5/12): Summary card, and Add credit form below it
+ * - Right column (7/12): Collect today and All customers list
  */
 
 import React, { useState, useEffect } from 'react';
@@ -98,71 +102,69 @@ export default function UdhaarScreen({ shopId, language = 'en' }) {
 
     const numAmount = parseFloat(amountGiven);
     if (!customerName.trim()) {
-      setErrorMessage('Please enter a customer name.');
+      setErrorMessage('Please enter the customer name.');
       return;
     }
     if (!numAmount || numAmount <= 0) {
-      setErrorMessage('Please enter a credit amount greater than 0.');
+      setErrorMessage('Credit amount must be greater than 0.');
       return;
     }
 
     setIsAddingCredit(true);
     try {
-      const newEntry = await addUdhaar(shopId, {
+      const payload = {
         customer_name: customerName.trim(),
         amount_given: numAmount,
+        given_date: new Date().toISOString().split('T')[0],
         due_date: dueDate || null,
         note: note.trim() || null,
-      });
+      };
 
-      setSuccessNote(`${t.creditSavedSuccess} ${newEntry.customer_name} (₹${formatRupees(newEntry.amount_given)})`);
+      const result = await addUdhaar(shopId, payload);
+      setSuccessNote(`${t.creditSavedSuccess} ${result.customer_name} (₹${formatRupees(result.amount_given)})`);
+
+      // Reset form
       setCustomerName('');
       setAmountGiven('');
       setDueDate('');
       setNote('');
-      const [sumData, entriesData] = await Promise.all([
-        getUdhaarSummary(shopId),
-        getUdhaarEntries(shopId, 'open'),
-      ]);
-      setSummary(sumData);
-      setAllEntries(entriesData || []);
+
+      // Reload list and summary
+      await loadData();
     } catch (err) {
-      setErrorMessage(err.message || 'Could not record credit entry.');
+      setErrorMessage(err.message || 'Could not add udhaar record.');
     } finally {
       setIsAddingCredit(false);
     }
   };
 
-  // Open the "Got Payment" box for a specific entry
+  // Open inline payment box for a customer
   const handleOpenPaymentBox = (item) => {
     setActivePaymentItem(item);
     setPaymentAmount(String(Math.round(item.balance)));
     setPaymentError(null);
-    setErrorMessage(null);
     setSuccessNote(null);
   };
 
-  // Close the active payment box
+  // Cancel inline payment box
   const handleClosePaymentBox = () => {
     setActivePaymentItem(null);
     setPaymentAmount('');
     setPaymentError(null);
   };
 
-  // Submit collected payment
+  // Submit recorded payment
   const handleConfirmPayment = async (e) => {
     e.preventDefault();
     if (!activePaymentItem) return;
 
     const numPay = parseFloat(paymentAmount);
     if (!numPay || numPay < 1) {
-      setPaymentError('Payment amount must be at least ₹1.');
+      setPaymentError('Payment must be at least ₹1.');
       return;
     }
     if (numPay > activePaymentItem.balance) {
-      setPaymentError(
-        `Payment amount (₹${formatRupees(numPay)}) cannot exceed balance (₹${formatRupees(activePaymentItem.balance)}).`
-      );
+      setPaymentError(`Cannot pay more than balance (₹${formatRupees(activePaymentItem.balance)}).`);
       return;
     }
 
@@ -174,21 +176,17 @@ export default function UdhaarScreen({ shopId, language = 'en' }) {
     const targetItemId = activePaymentItem.id;
 
     try {
-      // 1. Submit payment POST to backend
       await recordUdhaarPayment(shopId, targetItemId, {
         amount: numPay,
       });
 
-      // 2. Close the amount box
       setActivePaymentItem(null);
       setPaymentAmount('');
       setPaymentError(null);
 
-      // 3. Show short success message: "Rs X received from <name>"
       const formattedPaid = Number(numPay).toLocaleString('en-IN');
       setSuccessNote(`Rs ${formattedPaid} received from ${targetCustomerName}`);
 
-      // 4. Re-fetch both /udhaar/summary and the open list so the card, list, and counts update at once
       const [sumData, entriesData] = await Promise.all([
         getUdhaarSummary(shopId),
         getUdhaarEntries(shopId, 'open'),
@@ -196,7 +194,6 @@ export default function UdhaarScreen({ shopId, language = 'en' }) {
       setSummary(sumData);
       setAllEntries(entriesData || []);
     } catch (err) {
-      // If the POST fails, show the server's plain error message under the box (keep box open)
       setPaymentError(err.message || 'Could not record payment.');
     } finally {
       setIsSubmittingPayment(false);
@@ -215,424 +212,388 @@ export default function UdhaarScreen({ shopId, language = 'en' }) {
   const collectTodayList = summary?.collect_today || [];
   const topCustomers = summary?.top_customers || [];
 
-  return (
-    <div className="space-y-5 pb-24">
-      {/* 1. Header & Summary Card */}
-      <div className="bg-white rounded-3xl p-5 border-2 border-slate-200 shadow-sm space-y-4">
-        <div>
-          <h2 className="text-xl font-black text-slate-900">
-            {t.udhaarTitle}
-          </h2>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            {t.udhaarSubtitle}
-          </p>
+  // Sub-section 1: Summary Card
+  const summaryCard = (
+    <div className="bg-white rounded-3xl p-5 border-2 border-slate-200 shadow-sm space-y-4">
+      <div>
+        <h2 className="text-xl font-black text-slate-900">
+          {t.udhaarTitle}
+        </h2>
+        <p className="text-xs text-slate-500 font-medium mt-0.5">
+          {t.udhaarSubtitle}
+        </p>
+      </div>
+
+      {/* Success Banner */}
+      {successNote && (
+        <div className="p-4 bg-emerald-50 border-2 border-emerald-300 rounded-2xl flex items-start gap-3 text-emerald-900 text-sm">
+          <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-600 mt-0.5" strokeWidth={2.5} />
+          <div className="font-bold leading-snug">{successNote}</div>
         </div>
+      )}
 
-        {/* Success Banner */}
-        {successNote && (
-          <div className="p-4 bg-emerald-50 border-2 border-emerald-300 rounded-2xl flex items-start gap-3 text-emerald-900 text-sm">
-            <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-600 mt-0.5" strokeWidth={2.5} />
-            <div className="font-bold leading-snug">{successNote}</div>
-          </div>
-        )}
-
-        {/* Error Banner */}
-        {errorMessage && (
-          <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl flex items-start gap-3 text-rose-900 text-sm">
-            <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600 mt-0.5" strokeWidth={2.5} />
-            <div className="font-semibold leading-snug">{errorMessage}</div>
-          </div>
-        )}
-
-        {/* Total Outstanding Balance */}
-        <div className="space-y-1 pt-1">
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-            {t.totalOutstanding}
-          </div>
-          <div className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight">
-            ₹{formatRupees(summary?.total_outstanding || 0)}
-          </div>
+      {/* Error Banner */}
+      {errorMessage && (
+        <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl flex items-start gap-3 text-rose-900 text-sm">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600 mt-0.5" strokeWidth={2.5} />
+          <div className="font-semibold leading-snug">{errorMessage}</div>
         </div>
+      )}
 
-        {/* Overdue Amount & Active Customer Count */}
-        <div className="grid grid-cols-2 gap-2.5 pt-1">
-          {/* Overdue Amount in RED with Icon and Word "Overdue" */}
-          <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-2xl">
-            <div className="flex items-center gap-1.5 text-rose-800 font-extrabold text-xs uppercase tracking-wide">
-              <AlertOctagon className="w-4 h-4 flex-shrink-0 text-rose-600" strokeWidth={2.5} />
-              <span>{t.overdueWord}</span>
-            </div>
-            <div className="text-2xl font-black text-rose-900 mt-1">
-              ₹{formatRupees(summary?.overdue_amount || 0)}
-            </div>
-          </div>
-
-          {/* Customer Count */}
-          <div className="p-3.5 bg-slate-50 border-2 border-slate-200 rounded-2xl">
-            <div className="flex items-center gap-1.5 text-slate-600 font-bold text-xs uppercase tracking-wide">
-              <Users className="w-4 h-4 flex-shrink-0 text-slate-500" strokeWidth={2.5} />
-              <span>{t.activeCustomers}</span>
-            </div>
-            <div className="text-2xl font-black text-slate-900 mt-1">
-              {summary?.customer_count || 0}
-            </div>
-          </div>
+      {/* Total Outstanding Balance */}
+      <div className="space-y-1 pt-1">
+        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+          {t.totalOutstanding}
+        </div>
+        <div className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight">
+          ₹{formatRupees(summary?.total_outstanding || 0)}
         </div>
       </div>
 
-      {/* 2. Collect Today List (Due today or overdue, largest first) */}
-      <div className="bg-white rounded-3xl p-5 border-2 border-slate-200 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-amber-600" strokeWidth={2.5} />
-            <h3 className="font-extrabold text-slate-900 text-base">
-              {t.collectTodayTitle}
-            </h3>
+      {/* Overdue Amount & Active Customer Count */}
+      <div className="grid grid-cols-2 gap-2.5 pt-1">
+        {/* Overdue Amount in RED with Icon and Word "Overdue" */}
+        <div className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-2xl">
+          <div className="flex items-center gap-1.5 text-rose-800 font-extrabold text-xs uppercase tracking-wide">
+            <AlertOctagon className="w-4 h-4 flex-shrink-0 text-rose-600" strokeWidth={2.5} />
+            <span>{t.overdueWord}</span>
           </div>
-          <span className="text-xs font-black bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-300">
-            {collectTodayList.length}
-          </span>
+          <div className="text-2xl font-black text-rose-900 mt-1">
+            ₹{formatRupees(summary?.overdue_amount || 0)}
+          </div>
         </div>
 
-        {collectTodayList.length === 0 ? (
-          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-center text-xs text-emerald-800 font-bold">
-            {t.noCollectToday}
+        {/* Customer Count */}
+        <div className="p-3.5 bg-slate-50 border-2 border-slate-200 rounded-2xl">
+          <div className="flex items-center gap-1.5 text-slate-600 font-bold text-xs uppercase tracking-wide">
+            <Users className="w-4 h-4 flex-shrink-0 text-slate-500" strokeWidth={2.5} />
+            <span>{t.activeCustomers}</span>
           </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {collectTodayList.map((item) => {
-              const isSelected = activePaymentItem?.id === item.id;
-
-              return (
-                <div key={item.id} className="py-3.5 first:pt-1 last:pb-1 space-y-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-black text-base text-slate-900 leading-tight">
-                        {item.customer_name}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        {item.days_overdue > 0 ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-md">
-                            <AlertOctagon className="w-3 h-3" />
-                            {item.days_overdue} {t.daysOverdueLabel}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-md">
-                            <Clock className="w-3 h-3" />
-                            {t.dueTodayLabel}
-                          </span>
-                        )}
-                        {item.note && (
-                          <span className="text-xs text-slate-400 font-medium truncate max-w-[140px]">
-                            {item.note}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Balance */}
-                    <div className="text-right">
-                      <span className="text-xs font-bold text-slate-400 block">{t.balanceDue}</span>
-                      <span className="text-xl font-black text-slate-900">
-                        ₹{formatRupees(item.balance)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Big "Got Payment" Button (min 56px height) */}
-                  {!isSelected ? (
-                    <button
-                      onClick={() => handleOpenPaymentBox(item)}
-                      className="w-full min-h-[52px] bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-sm rounded-2xl shadow-sm flex items-center justify-center gap-2 transition-all"
-                    >
-                      <Check className="w-5 h-5" strokeWidth={3} />
-                      <span>{t.btnGotPayment}</span>
-                    </button>
-                  ) : (
-                    /* Inline payment amount box (default = full balance) */
-                    <form
-                      onSubmit={handleConfirmPayment}
-                      className="p-3.5 bg-slate-50 border-2 border-emerald-500 rounded-2xl space-y-3 animate-fadeIn"
-                    >
-                      <div className="text-xs font-bold text-slate-700">
-                        {t.recordPaymentTitle} <strong className="text-slate-900">{item.customer_name}</strong>
-                      </div>
-
-                      <div className="relative flex items-center">
-                        <span className="absolute left-3.5 text-lg font-black text-slate-400">₹</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          value={paymentAmount}
-                          onChange={(e) => {
-                            setPaymentAmount(e.target.value);
-                            if (paymentError) setPaymentError(null);
-                          }}
-                          max={item.balance}
-                          min={1}
-                          className="w-full min-h-[48px] font-black text-lg text-slate-900 bg-white border-2 border-slate-300 rounded-xl pl-9 pr-3 py-2 focus:border-emerald-500 outline-none"
-                          placeholder={String(Math.round(item.balance))}
-                          required
-                          autoFocus
-                        />
-                      </div>
-
-                      {/* Server's plain error message under the box */}
-                      {paymentError && (
-                        <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl flex items-start gap-2 text-rose-800 text-xs font-bold animate-fadeIn">
-                          <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600 mt-0.5" />
-                          <span className="leading-snug">{paymentError}</span>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={handleClosePaymentBox}
-                          className="min-h-[46px] px-3 py-2 bg-slate-200 hover:bg-slate-300 active:scale-95 text-slate-700 font-bold text-xs rounded-xl"
-                        >
-                          {t.btnCancelling}
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={isSubmittingPayment}
-                          className="min-h-[46px] px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5"
-                        >
-                          {isSubmittingPayment ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Check className="w-4 h-4" strokeWidth={3} />
-                          )}
-                          <span>{t.btnConfirmPayment}</span>
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              );
-            })}
+          <div className="text-2xl font-black text-slate-900 mt-1">
+            {summary?.customer_count || 0}
           </div>
-        )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // Sub-section 2: Add Credit Form
+  const addCreditCard = (
+    <div className="bg-white rounded-3xl p-5 border-2 border-slate-200 shadow-sm space-y-4">
+      <div className="flex items-center gap-2">
+        <CreditCard className="w-5 h-5 text-emerald-700" strokeWidth={2.5} />
+        <h3 className="font-extrabold text-slate-900 text-base">
+          {t.addCreditTitle}
+        </h3>
       </div>
 
-      {/* 3. Add Credit Form */}
-      <div className="bg-white rounded-3xl p-5 border-2 border-slate-200 shadow-sm space-y-4">
+      <form onSubmit={handleAddCredit} className="space-y-4">
+        {/* Customer Name */}
         <div>
-          <h3 className="font-extrabold text-slate-900 text-base">
-            {t.addCreditTitle}
-          </h3>
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            {t.customerNameLabel} <span className="text-rose-500">*</span>
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. Ramesh Kumar"
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            className="w-full min-h-[52px] md:min-h-[44px] font-bold text-base md:text-sm text-slate-900 bg-slate-50 border-2 border-slate-300 rounded-2xl px-4 py-3 md:py-2 focus:border-emerald-500 focus:bg-white outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
+            required
+          />
         </div>
 
-        <form onSubmit={handleAddCredit} className="space-y-4">
-          {/* Customer Name */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              {t.customerNameLabel} <span className="text-rose-500">*</span>
-            </label>
+        {/* Amount */}
+        <div>
+          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            {t.creditAmountLabel} <span className="text-rose-500">*</span>
+          </label>
+          <div className="relative flex items-center">
+            <span className="absolute left-4 text-xl font-black text-slate-400">₹</span>
             <input
-              type="text"
-              placeholder="e.g. Ramesh Kumar"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="w-full min-h-[52px] font-bold text-base text-slate-900 bg-slate-50 border-2 border-slate-300 rounded-2xl px-4 py-3 focus:border-emerald-500 focus:bg-white outline-none transition-colors"
+              type="number"
+              inputMode="numeric"
+              placeholder="e.g. 2500"
+              value={amountGiven}
+              onChange={(e) => setAmountGiven(e.target.value)}
+              className="w-full min-h-[52px] md:min-h-[44px] font-black text-xl md:text-base text-slate-900 bg-slate-50 border-2 border-slate-300 rounded-2xl pl-10 pr-4 py-3 md:py-2 focus:border-emerald-500 focus:bg-white outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
               required
             />
           </div>
+        </div>
 
-          {/* Amount */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              {t.creditAmountLabel} <span className="text-rose-500">*</span>
+        {/* Due date (Optional) */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              {t.dueDateLabel}
             </label>
-            <div className="relative flex items-center">
-              <span className="absolute left-4 text-xl font-black text-slate-400">₹</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                placeholder="e.g. 2500"
-                value={amountGiven}
-                onChange={(e) => setAmountGiven(e.target.value)}
-                className="w-full min-h-[52px] font-black text-xl text-slate-900 bg-slate-50 border-2 border-slate-300 rounded-2xl pl-10 pr-4 py-3 focus:border-emerald-500 focus:bg-white outline-none transition-colors"
-                required
-              />
-            </div>
+            <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+              {t.optionalTag}
+            </span>
           </div>
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="w-full min-h-[52px] md:min-h-[44px] font-bold text-base md:text-sm text-slate-900 bg-slate-50 border-2 border-slate-300 rounded-2xl px-4 py-3 md:py-2 focus:border-emerald-500 focus:bg-white outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
+          />
+        </div>
 
-          {/* Due date (Optional) */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                {t.dueDateLabel}
-              </label>
-              <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-                {t.optionalTag}
-              </span>
-            </div>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="w-full min-h-[52px] font-bold text-base text-slate-900 bg-slate-50 border-2 border-slate-300 rounded-2xl px-4 py-3 focus:border-emerald-500 focus:bg-white outline-none transition-colors"
-            />
+        {/* Note (Optional) */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Note / Items
+            </label>
+            <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+              {t.optionalTag}
+            </span>
           </div>
+          <input
+            type="text"
+            placeholder="e.g. Monthly rice & oil sack"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className="w-full min-h-[52px] md:min-h-[44px] font-medium text-base md:text-sm text-slate-900 bg-slate-50 border-2 border-slate-300 rounded-2xl px-4 py-3 md:py-2 focus:border-emerald-500 focus:bg-white outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
+          />
+        </div>
 
-          {/* Note (Optional) */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Note / Items
-              </label>
-              <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-                {t.optionalTag}
-              </span>
-            </div>
-            <input
-              type="text"
-              placeholder="e.g. Monthly rice & oil sack"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="w-full min-h-[52px] font-medium text-base text-slate-900 bg-slate-50 border-2 border-slate-300 rounded-2xl px-4 py-3 focus:border-emerald-500 focus:bg-white outline-none transition-colors"
-            />
-          </div>
+        {/* Submit Button */}
+        <button
+          type="submit"
+          disabled={isAddingCredit}
+          className="w-full min-h-[56px] md:min-h-[44px] px-6 py-4 md:py-2.5 bg-slate-900 hover:bg-black active:scale-95 disabled:opacity-50 text-white font-black text-lg md:text-base rounded-2xl shadow-md flex items-center justify-center gap-3 transition-all focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+        >
+          {isAddingCredit ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" strokeWidth={2.5} />
+              <span>{t.btnAddingCredit}</span>
+            </>
+          ) : (
+            <>
+              <Plus className="w-5 h-5" strokeWidth={2.5} />
+              <span>{t.btnAddCredit}</span>
+            </>
+          )}
+        </button>
+      </form>
+    </div>
+  );
 
-          {/* Submit Button (min 56px height) */}
-          <button
-            type="submit"
-            disabled={isAddingCredit}
-            className="w-full min-h-[56px] px-6 py-4 bg-slate-900 hover:bg-black active:scale-95 disabled:opacity-50 text-white font-black text-lg rounded-2xl shadow-lg flex items-center justify-center gap-3 transition-all"
-          >
-            {isAddingCredit ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" strokeWidth={2.5} />
-                <span>{t.btnAddingCredit}</span>
-              </>
-            ) : (
-              <>
-                <Plus className="w-6 h-6" strokeWidth={2.5} />
-                <span>{t.btnAddCredit}</span>
-              </>
-            )}
-          </button>
-        </form>
+  // Sub-section 3: Collect Today List
+  const collectTodayCard = (
+    <div className="bg-white rounded-3xl p-5 border-2 border-slate-200 shadow-sm space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Clock className="w-5 h-5 text-amber-600" strokeWidth={2.5} />
+          <h3 className="font-extrabold text-slate-900 text-base">
+            {t.collectTodayTitle}
+          </h3>
+        </div>
+        <span className="text-xs font-black bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-300">
+          {collectTodayList.length}
+        </span>
       </div>
 
-      {/* 4. Top Customers & Toggle for All Open Records */}
-      {topCustomers.length > 0 && (
-        <div className="bg-white rounded-3xl p-5 border-2 border-slate-200 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-extrabold text-slate-900 text-sm">
-              {t.topCustomersTitle}
-            </h3>
-            <button
-              onClick={() => setShowAllList(!showAllList)}
-              className="flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900"
-            >
-              <span>{showAllList ? 'Hide' : `View All (${allEntries.length})`}</span>
-              {showAllList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-          </div>
+      {collectTodayList.length === 0 ? (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-center text-xs text-emerald-800 font-bold">
+          {t.noCollectToday}
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {collectTodayList.map((item) => {
+            const isSelected = activePaymentItem?.id === item.id;
 
-          {!showAllList ? (
-            <div className="divide-y divide-slate-100">
-              {topCustomers.map((cust, idx) => (
-                <div key={idx} className="py-2.5 flex items-center justify-between text-sm">
-                  <span className="font-bold text-slate-800">{cust.customer_name}</span>
-                  <span className="font-black text-slate-900">₹{formatRupees(cust.balance)}</span>
+            return (
+              <div key={item.id} className="py-3.5 first:pt-1 last:pb-1 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-black text-base text-slate-900 leading-tight">
+                      {item.customer_name}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {item.days_overdue > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-md">
+                          <AlertOctagon className="w-3 h-3" />
+                          {item.days_overdue} {t.daysOverdueLabel}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-md">
+                          <Clock className="w-3 h-3" />
+                          {t.dueTodayLabel}
+                        </span>
+                      )}
+                      {item.note && (
+                        <span className="text-xs text-slate-400 font-medium truncate max-w-[140px]">
+                          {item.note}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Balance */}
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-slate-400 block">{t.balanceDue}</span>
+                    <span className="text-xl font-black text-slate-900">
+                      ₹{formatRupees(item.balance)}
+                    </span>
+                  </div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-              {allEntries.map((entry) => {
-                const isSelectedInAll = activePaymentItem?.id === entry.id;
-                return (
-                  <div key={entry.id} className="py-2.5">
-                    <div className="flex items-center justify-between text-sm">
-                      <div>
-                        <div className="font-bold text-slate-800">{entry.customer_name}</div>
-                        <div className="text-[11px] text-slate-400 font-medium">
-                          {formatFriendlyDate(entry.given_date)} {entry.due_date ? `• Due ${formatFriendlyDate(entry.due_date)}` : ''}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-slate-900">₹{formatRupees(entry.balance)}</span>
-                        {!isSelectedInAll && (
-                          <button
-                            onClick={() => handleOpenPaymentBox(entry)}
-                            className="px-2.5 py-1 text-xs font-bold bg-emerald-100 text-emerald-800 rounded-lg hover:bg-emerald-200"
-                          >
-                            Pay
-                          </button>
-                        )}
-                      </div>
+
+                {/* Got Payment Button */}
+                {!isSelected ? (
+                  <button
+                    onClick={() => handleOpenPaymentBox(item)}
+                    className="w-full min-h-[52px] md:min-h-[44px] bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-sm rounded-2xl shadow-sm flex items-center justify-center gap-2 transition-all focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                  >
+                    <Check className="w-5 h-5" strokeWidth={3} />
+                    <span>{t.btnGotPayment}</span>
+                  </button>
+                ) : (
+                  /* Inline payment amount box */
+                  <form
+                    onSubmit={handleConfirmPayment}
+                    className="p-3.5 bg-slate-50 border-2 border-emerald-500 rounded-2xl space-y-3 animate-fadeIn"
+                  >
+                    <div className="text-xs font-bold text-slate-700">
+                      {t.recordPaymentTitle} <strong className="text-slate-900">{item.customer_name}</strong>
                     </div>
 
-                    {/* Inline payment box if selected in View All */}
-                    {isSelectedInAll && (
-                      <form
-                        onSubmit={handleConfirmPayment}
-                        className="mt-2.5 p-3.5 bg-slate-50 border-2 border-emerald-500 rounded-2xl space-y-3 animate-fadeIn"
-                      >
-                        <div className="text-xs font-bold text-slate-700">
-                          {t.recordPaymentTitle} <strong className="text-slate-900">{entry.customer_name}</strong>
-                        </div>
-                        <div className="relative flex items-center">
-                          <span className="absolute left-3.5 text-lg font-black text-slate-400">₹</span>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            value={paymentAmount}
-                            onChange={(e) => {
-                              setPaymentAmount(e.target.value);
-                              if (paymentError) setPaymentError(null);
-                            }}
-                            max={entry.balance}
-                            min={1}
-                            className="w-full min-h-[48px] font-black text-lg text-slate-900 bg-white border-2 border-slate-300 rounded-xl pl-9 pr-3 py-2 focus:border-emerald-500 outline-none"
-                            placeholder={String(Math.round(entry.balance))}
-                            required
-                            autoFocus
-                          />
-                        </div>
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3.5 text-lg font-black text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={paymentAmount}
+                        onChange={(e) => {
+                          setPaymentAmount(e.target.value);
+                          if (paymentError) setPaymentError(null);
+                        }}
+                        max={item.balance}
+                        min={1}
+                        className="w-full min-h-[48px] md:min-h-[40px] font-black text-lg md:text-base text-slate-900 bg-white border-2 border-slate-300 rounded-xl pl-9 pr-3 py-2 focus:border-emerald-500 outline-none"
+                        placeholder={String(Math.round(item.balance))}
+                        required
+                        autoFocus
+                      />
+                    </div>
 
-                        {/* Server's plain error message under the box */}
-                        {paymentError && (
-                          <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl flex items-start gap-2 text-rose-800 text-xs font-bold animate-fadeIn">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600 mt-0.5" />
-                            <span className="leading-snug">{paymentError}</span>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={handleClosePaymentBox}
-                            className="min-h-[46px] px-3 py-2 bg-slate-200 hover:bg-slate-300 active:scale-95 text-slate-700 font-bold text-xs rounded-xl"
-                          >
-                            {t.btnCancelling}
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={isSubmittingPayment}
-                            className="min-h-[46px] px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5"
-                          >
-                            {isSubmittingPayment ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Check className="w-4 h-4" strokeWidth={3} />
-                            )}
-                            <span>{t.btnConfirmPayment}</span>
-                          </button>
-                        </div>
-                      </form>
+                    {paymentError && (
+                      <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl flex items-start gap-2 text-rose-800 text-xs font-bold animate-fadeIn">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600 mt-0.5" />
+                        <span className="leading-snug">{paymentError}</span>
+                      </div>
                     )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={handleClosePaymentBox}
+                        className="min-h-[44px] px-3 py-2 bg-slate-200 hover:bg-slate-300 active:scale-95 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                      >
+                        {t.btnCancelling}
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSubmittingPayment}
+                        className="min-h-[44px] px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        {isSubmittingPayment ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Check className="w-4 h-4" strokeWidth={3} />
+                        )}
+                        <span>{t.btnConfirmPayment}</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+    </div>
+  );
+
+  // Sub-section 4: Top Customers & All Customers List
+  const customersCard = (
+    <div className="bg-white rounded-3xl p-5 border-2 border-slate-200 shadow-sm space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-extrabold text-slate-900 text-sm">
+          {t.topCustomersTitle}
+        </h3>
+        <button
+          onClick={() => setShowAllList(!showAllList)}
+          className="flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer focus:outline-none"
+        >
+          <span>{showAllList ? 'Hide' : `View All (${allEntries.length})`}</span>
+          {showAllList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {!showAllList ? (
+        <div className="divide-y divide-slate-100">
+          {topCustomers.map((cust, idx) => (
+            <div key={idx} className="py-2.5 flex items-center justify-between text-sm">
+              <span className="font-bold text-slate-800">{cust.customer_name}</span>
+              <span className="font-black text-slate-900">₹{formatRupees(cust.balance)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto pr-1">
+          {allEntries.map((entry) => (
+            <div key={entry.id} className="py-2.5">
+              <div className="flex items-center justify-between text-sm">
+                <div>
+                  <div className="font-bold text-slate-800">{entry.customer_name}</div>
+                  <div className="text-xs text-slate-400">
+                    Given: {formatFriendlyDate(entry.given_date)}
+                    {entry.due_date && ` • Due: ${formatFriendlyDate(entry.due_date)}`}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-black text-slate-900">₹{formatRupees(entry.balance)}</div>
+                  <div className="text-[11px] font-bold text-slate-400">
+                    Paid: ₹{formatRupees(entry.amount_paid)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6 pb-24 md:pb-8">
+      {/* 2-Column Responsive Layout on lg+ */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column (5/12 on lg): Summary Card + Add Credit Form */}
+        <div className="lg:col-span-5 space-y-6">
+          {summaryCard}
+
+          {/* Add Credit Form (Desktop placement: below summary on lg+) */}
+          <div className="hidden lg:block">
+            {addCreditCard}
+          </div>
+        </div>
+
+        {/* Right Column (7/12 on lg): Collect Today + Customers List */}
+        <div className="lg:col-span-7 space-y-6">
+          {collectTodayCard}
+
+          {/* Add Credit Form (Mobile placement: between Collect Today and Customers) */}
+          <div className="lg:hidden">
+            {addCreditCard}
+          </div>
+
+          {customersCard}
+        </div>
+      </div>
     </div>
   );
 }

@@ -127,7 +127,7 @@ export default function ForecastChart({ forecastData, language = 'en' }) {
         </div>
       </div>
 
-      <div className="w-full h-56 -ml-2">
+      <div className="w-full h-56 lg:h-[360px] -ml-2">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 10, right: 12, left: -4, bottom: 0 }}>
             {/* Shaded confidence band between p10 and p90 */}

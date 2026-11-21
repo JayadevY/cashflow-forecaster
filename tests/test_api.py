@@ -800,3 +800,241 @@ def test_tips_overdue_udhaar_appears(client):
     assert udhaar_tip["params"]["customers"] == 1
     assert udhaar_tip["params"]["days_cover"] >= 1
 
+
+# ============================================================================
+# Live Transactions Tests
+# ============================================================================
+
+def _create_simple_shop(client, opening_cash=10000.0) -> int:
+    """Helper to create a fresh shop."""
+    res = client.post("/shops", json={
+        "name": "Live Tx Kirana",
+        "shop_type": "kirana",
+        "opening_cash": opening_cash,
+        "low_cash_threshold": 5000.0,
+    })
+    return res.json()["id"]
+
+
+def test_transaction_manual_cash(client):
+    """1. Test recording a manual cash transaction successfully."""
+    shop_id = _create_simple_shop(client)
+
+    payload = {
+        "amount": 250.0,
+        "mode": "cash",
+        "reference": "CASH-001",
+        "customer_note": "Rice & dal purchase",
+    }
+    res = client.post(f"/shops/{shop_id}/transactions", json=payload)
+    assert res.status_code == 201
+    data = res.json()
+    assert data["shop_id"] == shop_id
+    assert data["amount"] == 250.0
+    assert data["mode"] == "cash"
+    assert data["source"] == "manual"
+    assert data["status"] == "success"
+    assert data["reference"] == "CASH-001"
+    assert data["customer_note"] == "Rice & dal purchase"
+    assert "created_at" in data
+
+
+def test_transaction_duplicate_reference_rejected(client):
+    """2. Test that a duplicate reference is rejected with 400 and plain message."""
+    shop_id = _create_simple_shop(client)
+
+    res1 = client.post(f"/shops/{shop_id}/transactions", json={
+        "amount": 100.0,
+        "mode": "upi",
+        "reference": "DUP-REF-123",
+    })
+    assert res1.status_code == 201
+
+    res2 = client.post(f"/shops/{shop_id}/transactions", json={
+        "amount": 200.0,
+        "mode": "upi",
+        "reference": "DUP-REF-123",
+    })
+    assert res2.status_code == 400
+    assert "already exists" in res2.json()["detail"].lower()
+
+
+def test_transaction_negative_or_zero_amount_rejected(client):
+    """3. Test that non-positive transaction amounts are rejected."""
+    shop_id = _create_simple_shop(client)
+
+    res_zero = client.post(f"/shops/{shop_id}/transactions", json={
+        "amount": 0.0,
+        "mode": "cash",
+    })
+    assert res_zero.status_code in (400, 422)
+
+    res_neg = client.post(f"/shops/{shop_id}/transactions", json={
+        "amount": -50.0,
+        "mode": "cash",
+    })
+    assert res_neg.status_code in (400, 422)
+
+
+def test_transaction_since_filter(client):
+    """4. Test that the 'since' filter returns only transactions created after timestamp."""
+    shop_id = _create_simple_shop(client)
+
+    # Insert 3 transactions with explicit timestamps in database
+    conn = get_connection()
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO transactions (shop_id, created_at, amount, mode, source, status, reference)
+            VALUES (?, '2026-11-21T10:00:00', 100.0, 'cash', 'manual', 'success', 'T1'),
+                   (?, '2026-11-21T10:30:00', 200.0, 'upi', 'simulated', 'success', 'T2'),
+                   (?, '2026-11-21T11:00:00', 300.0, 'card', 'simulated', 'success', 'T3')
+            """,
+            (shop_id, shop_id, shop_id),
+        )
+    conn.close()
+
+    # Query without since
+    res_all = client.get(f"/shops/{shop_id}/transactions")
+    assert res_all.status_code == 200
+    assert len(res_all.json()) == 3
+
+    # Query with since=2026-11-21T10:15:00 (should return T2 and T3)
+    res_since = client.get(f"/shops/{shop_id}/transactions?since=2026-11-21T10:15:00")
+    assert res_since.status_code == 200
+    txs = res_since.json()
+    assert len(txs) == 2
+    refs = [t["reference"] for t in txs]
+    assert refs == ["T3", "T2"]  # Newest first
+
+
+def test_transaction_summary_totals_by_mode(client):
+    """5. Test transaction summary aggregates totals by mode, cash total, and digital total."""
+    shop_id = _create_simple_shop(client)
+    today = date.today().isoformat()
+
+    conn = get_connection()
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO transactions (shop_id, created_at, amount, mode, source, status, reference)
+            VALUES (?, ? || 'T09:00:00', 500.0, 'cash', 'manual', 'success', 'SUM1'),
+                   (?, ? || 'T09:30:00', 200.0, 'cash', 'manual', 'success', 'SUM2'),
+                   (?, ? || 'T10:00:00', 1200.0, 'upi', 'simulated', 'success', 'SUM3'),
+                   (?, ? || 'T11:00:00', 800.0, 'card', 'simulated', 'success', 'SUM4'),
+                   (?, ? || 'T11:30:00', 150.0, 'netbanking', 'simulated', 'success', 'SUM5')
+            """,
+            (shop_id, today, shop_id, today, shop_id, today, shop_id, today, shop_id, today),
+        )
+    conn.close()
+
+    res = client.get(f"/shops/{shop_id}/transactions/summary?date=today")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total_count"] == 5
+    assert data["cash_total"] == 700.0
+    assert data["digital_total"] == 2150.0  # 1200 + 800 + 150
+    assert data["by_mode"]["cash"] == 700.0
+    assert data["by_mode"]["upi"] == 1200.0
+    assert data["by_mode"]["card"] == 800.0
+    assert data["by_mode"]["netbanking"] == 150.0
+    assert data["last_transaction_time"] == f"{today}T11:30:00"
+
+
+def test_transaction_close_day_adds_only_cash_to_closing_cash(client):
+    """
+    6. CRITICAL ACCOUNTING TEST:
+    Close day must add cash transactions to closing_cash in the till,
+    while digital transactions go to digital_sales without changing drawer cash.
+    Also verifies idempotency (calling close-day repeatedly does not duplicate).
+    """
+    shop_id = _create_simple_shop(client, opening_cash=10000.0)
+    today = date.today().isoformat()
+
+    # Insert 1 cash transaction (₹1,000) and 1 UPI transaction (₹2,500)
+    conn = get_connection()
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO transactions (shop_id, created_at, amount, mode, source, status, reference)
+            VALUES (?, ? || 'T10:00:00', 1000.0, 'cash', 'manual', 'success', 'CLOSE-C1'),
+                   (?, ? || 'T10:15:00', 2500.0, 'upi', 'simulated', 'success', 'CLOSE-U1')
+            """,
+            (shop_id, today, shop_id, today),
+        )
+    conn.close()
+
+    # Call close-day
+    res = client.post(f"/shops/{shop_id}/transactions/close-day?date=today")
+    assert res.status_code == 200
+    data = res.json()
+
+    # Opening was 10,000. Only ₹1,000 cash added. Closing cash must be 11,000 (NOT 13,500)
+    assert data["cash_sales_added"] == 1000.0
+    assert data["total_cash_sales"] == 1000.0
+    assert data["digital_sales"] == 2500.0
+    assert data["closing_cash"] == 11000.0
+
+    # Verify daily_entries row in database
+    conn = get_connection()
+    entry = conn.execute(
+        "SELECT * FROM daily_entries WHERE shop_id = ? AND date = ?", (shop_id, today)
+    ).fetchone()
+    conn.close()
+
+    assert entry is not None
+    assert float(entry["cash_sales"]) == 1000.0
+    assert float(entry["digital_sales"]) == 2500.0
+    assert float(entry["closing_cash"]) == 11000.0
+
+    # Idempotency check: Call close-day AGAIN without new transactions
+    res2 = client.post(f"/shops/{shop_id}/transactions/close-day?date=today")
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["cash_sales_added"] == 0.0  # Zero added!
+    assert data2["total_cash_sales"] == 1000.0
+    assert data2["closing_cash"] == 11000.0  # Not 12,000!
+
+
+def test_transaction_delete_undo(client):
+    """7. Test deleting a manual cash transaction within 10 minutes vs rejecting non-cash."""
+    shop_id = _create_simple_shop(client)
+
+    # 1. Create a manual cash transaction
+    c_res = client.post(f"/shops/{shop_id}/transactions", json={
+        "amount": 350.0,
+        "mode": "cash",
+        "reference": "UNDO-1",
+    })
+    assert c_res.status_code == 201
+    tid = c_res.json()["id"]
+
+    # Delete it (should succeed)
+    del_res = client.delete(f"/shops/{shop_id}/transactions/{tid}")
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] if "status" in del_res.json() else del_res.json()["id"] == tid
+
+    # 2. Create a simulated digital transaction
+    sim_res = client.post(f"/shops/{shop_id}/transactions/simulate")
+    sim_tid = sim_res.json()["id"]
+
+    # Attempting to delete digital simulated transaction should be rejected (400)
+    del_sim_res = client.delete(f"/shops/{shop_id}/transactions/{sim_tid}")
+    assert del_sim_res.status_code == 400
+    assert "manual cash" in del_sim_res.json()["detail"].lower()
+
+
+def test_transaction_simulate(client):
+    """8. Test simulation endpoint generates realistic digital transactions."""
+    shop_id = _create_simple_shop(client)
+
+    res = client.post(f"/shops/{shop_id}/transactions/simulate")
+    assert res.status_code == 201
+    tx = res.json()
+    assert tx["shop_id"] == shop_id
+    assert 20.0 <= tx["amount"] <= 2000.0
+    assert tx["mode"] in ("upi", "card", "netbanking")
+    assert tx["source"] == "simulated"
+    assert tx["status"] == "success"
+    assert tx["reference"].startswith("SIM-")
+

@@ -165,3 +165,74 @@ export async function getShopTips(shopId) {
   });
   return handleResponse(res);
 }
+
+/**
+ * 14. List live transactions for a shop (optionally filtered by 'since' timestamp)
+ */
+export async function getTransactions(shopId, { since, limit = 50 } = {}) {
+  const params = new URLSearchParams();
+  if (since) params.append('since', since);
+  if (limit) params.append('limit', String(limit));
+  params.append('_t', String(Date.now()));
+
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/transactions?${params.toString()}`, {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+  });
+  return handleResponse(res);
+}
+
+/**
+ * 15. Fetch transaction summary for a day (totals by mode, counts, last transaction time)
+ */
+export async function getTransactionSummary(shopId, date = 'today') {
+  const params = new URLSearchParams({ date, _t: String(Date.now()) });
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/transactions/summary?${params.toString()}`, {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+  });
+  return handleResponse(res);
+}
+
+/**
+ * 16. Record a manual transaction (e.g. cash received)
+ */
+export async function addTransaction(shopId, txData) {
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/transactions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(txData),
+  });
+  return handleResponse(res);
+}
+
+/**
+ * 17. Simulate a customer digital payment (demo mode)
+ */
+export async function simulateTransaction(shopId) {
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/transactions/simulate`, {
+    method: 'POST',
+  });
+  return handleResponse(res);
+}
+
+/**
+ * 18. Undo a mistaken manual cash entry within 10 minutes
+ */
+export async function deleteTransaction(shopId, tid) {
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/transactions/${tid}`, {
+    method: 'DELETE',
+  });
+  return handleResponse(res);
+}
+
+/**
+ * 19. Close the business day (reconciles cash into drawer, digital to bank)
+ */
+export async function closeDay(shopId, date = 'today') {
+  const params = new URLSearchParams({ date });
+  const res = await fetch(`${API_BASE_URL}/shops/${shopId}/transactions/close-day?${params.toString()}`, {
+    method: 'POST',
+  });
+  return handleResponse(res);
+}

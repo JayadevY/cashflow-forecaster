@@ -28,7 +28,7 @@ export default function Navbar({
   ];
 
   return (
-    <header className="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-30 shadow-sm">
+    <header className="md:hidden bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-30 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         {/* App Title with Icon */}
         <div className="flex items-center gap-2">

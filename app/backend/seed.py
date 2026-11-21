@@ -144,20 +144,23 @@ def seed_database(db_path: Path = None) -> None:
                     f"Threshold: Rs {int(threshold):,} | Latest Cash: Rs {int(latest_cash):,}"
                 )
 
+            # Fetch shop IDs by type for referencing foreign keys
+            shops_by_type = {
+                r["shop_type"]: r["id"]
+                for r in conn.execute("SELECT id, shop_type FROM shops").fetchall()
+            }
+            ts_id = shops_by_type.get("tea_stall")
+            vs_id = shops_by_type.get("vegetable_shop")
+            tc_id = shops_by_type.get("tiffin_center")
+            ks_id = shops_by_type.get("kirana")
+
             # Seed Udhaar demo customers ONLY when the udhaar table is completely empty
             udhaar_count = conn.execute("SELECT COUNT(*) AS c FROM udhaar").fetchone()["c"]
             if udhaar_count == 0:
                 print("\n--> Seeding demo Udhaar credit records...")
-                # Fetch shop IDs by type
-                shops_by_type = {
-                    r["shop_type"]: r["id"]
-                    for r in conn.execute("SELECT id, shop_type FROM shops").fetchall()
-                }
-
                 demo_udhaar_records = []
 
                 # 1. Tea Stall (6 demo customers: monthly office pass, tea tokens, snacks)
-                ts_id = shops_by_type.get("tea_stall")
                 if ts_id:
                     demo_udhaar_records.extend([
                         (ts_id, "Ravi Auto Driver", 450.0, 150.0, "2026-11-02", "2026-11-12", "Weekly tea & biscuit tab", "open"),
@@ -220,6 +223,130 @@ def seed_database(db_path: Path = None) -> None:
                 print(f"✓ Seeded {len(demo_udhaar_records)} demo udhaar credit records across all 4 shops.")
             else:
                 print(f"ℹ Udhaar table already has {udhaar_count} records. Keeping existing data.")
+
+            # Seed demo transactions ONLY when the transactions table is completely empty
+            tx_count = conn.execute("SELECT COUNT(*) AS c FROM transactions").fetchone()["c"]
+            if tx_count == 0:
+                print("\n--> Seeding demo live transactions for today...")
+                today_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+
+                # Times throughout the business day
+                times = [
+                    "07:30:00", "08:15:00", "08:50:00", "09:20:00", "10:05:00",
+                    "10:45:00", "11:30:00", "12:15:00", "13:00:00", "14:20:00",
+                    "15:10:00", "16:00:00", "16:45:00", "17:30:00", "18:15:00"
+                ]
+
+                demo_tx_records = []
+
+                # 1. Tea Stall (15 tx: cash & UPI)
+                if ts_id:
+                    amounts_modes = [
+                        (20.0, "cash", "manual", "Morning tea"),
+                        (40.0, "upi", "simulated", "Tea & samosa"),
+                        (30.0, "cash", "manual", "Ginger tea x 2"),
+                        (60.0, "upi", "simulated", "Office break tea"),
+                        (15.0, "cash", "manual", "Single tea"),
+                        (25.0, "cash", "manual", "Filter coffee"),
+                        (50.0, "upi", "simulated", "Snacks & tea"),
+                        (120.0, "upi", "simulated", "Parcel order"),
+                        (40.0, "cash", "manual", "Tea & biscuit"),
+                        (80.0, "upi", "simulated", "GPay quick pay"),
+                        (25.0, "cash", "manual", "Lemon tea"),
+                        (35.0, "upi", "simulated", "Evening boost"),
+                        (100.0, "upi", "simulated", "Office tray"),
+                        (15.0, "cash", "manual", "Tea"),
+                        (70.0, "upi", "simulated", "Tea & vadai"),
+                    ]
+                    for idx, (amt, mode, src, note) in enumerate(amounts_modes):
+                        created_at = f"{today_str}T{times[idx]}"
+                        ref = f"TS-{today_str.replace('-', '')}-{idx+1:03d}"
+                        demo_tx_records.append((ts_id, created_at, amt, mode, src, "success", ref, note))
+
+                # 2. Vegetable Mart (15 tx: cash & UPI)
+                if vs_id:
+                    amounts_modes = [
+                        (140.0, "cash", "manual", "Tomato and onions"),
+                        (320.0, "upi", "simulated", "Vegetable bag"),
+                        (85.0, "cash", "manual", "Greens & coriander"),
+                        (260.0, "upi", "simulated", "Potatoes & beans"),
+                        (190.0, "cash", "manual", "Carrot and ginger"),
+                        (450.0, "upi", "simulated", "Full basket"),
+                        (95.0, "cash", "manual", "Mint & curry leaf"),
+                        (380.0, "upi", "simulated", "Weekly kitchen veggies"),
+                        (150.0, "cash", "manual", "Cabbage & cauliflower"),
+                        (520.0, "upi", "simulated", "PhonePe payment"),
+                        (110.0, "cash", "manual", "Drumstick & gourd"),
+                        (280.0, "upi", "simulated", "Evening veg pack"),
+                        (350.0, "upi", "simulated", "Salad essentials"),
+                        (75.0, "cash", "manual", "Lemons & chilli"),
+                        (420.0, "upi", "simulated", "Customer QR scan"),
+                    ]
+                    for idx, (amt, mode, src, note) in enumerate(amounts_modes):
+                        created_at = f"{today_str}T{times[idx]}"
+                        ref = f"VM-{today_str.replace('-', '')}-{idx+1:03d}"
+                        demo_tx_records.append((vs_id, created_at, amt, mode, src, "success", ref, note))
+
+                # 3. Tiffin Center (15 tx: cash, UPI, card)
+                if tc_id:
+                    amounts_modes = [
+                        (90.0, "cash", "manual", "Idli & vadai"),
+                        (160.0, "upi", "simulated", "Masala dosa combo"),
+                        (70.0, "cash", "manual", "Poori bhaji"),
+                        (240.0, "upi", "simulated", "Family breakfast"),
+                        (350.0, "card", "simulated", "Card tap - brunch"),
+                        (120.0, "cash", "manual", "Lunch thali"),
+                        (180.0, "upi", "simulated", "Mini meal parcel"),
+                        (260.0, "upi", "simulated", "GPay quick counter"),
+                        (80.0, "cash", "manual", "Coffee & vada"),
+                        (420.0, "upi", "simulated", "Office meal parcel"),
+                        (110.0, "cash", "manual", "Rava dosa"),
+                        (150.0, "upi", "simulated", "Evening snacks"),
+                        (290.0, "card", "simulated", "Dinner order"),
+                        (190.0, "cash", "manual", "Parotta set"),
+                        (310.0, "upi", "simulated", "Paytm scan"),
+                    ]
+                    for idx, (amt, mode, src, note) in enumerate(amounts_modes):
+                        created_at = f"{today_str}T{times[idx]}"
+                        ref = f"TC-{today_str.replace('-', '')}-{idx+1:03d}"
+                        demo_tx_records.append((tc_id, created_at, amt, mode, src, "success", ref, note))
+
+                # 4. Kirana Store (15 tx: mix of cash, UPI, card, netbanking)
+                if ks_id:
+                    amounts_modes = [
+                        (180.0, "cash", "manual", "Milk & bread"),
+                        (450.0, "upi", "simulated", "Rice pack 5kg"),
+                        (850.0, "upi", "simulated", "Cooking oil & spices"),
+                        (1450.0, "card", "simulated", "Provisions debit card"),
+                        (320.0, "cash", "manual", "Detergent & soap"),
+                        (95.0, "cash", "manual", "Biscuits & tea"),
+                        (2100.0, "upi", "simulated", "Monthly khata partial pay"),
+                        (680.0, "upi", "simulated", "Ghee & sugar"),
+                        (1250.0, "netbanking", "simulated", "Wholesale supplier netbanking"),
+                        (390.0, "cash", "manual", "Pulses and atta"),
+                        (1750.0, "card", "simulated", "Groceries credit card"),
+                        (720.0, "upi", "simulated", "Dry fruits pack"),
+                        (430.0, "cash", "manual", "Sundry items"),
+                        (1500.0, "upi", "simulated", "PhonePe counter"),
+                        (290.0, "cash", "manual", "Toothpaste & shampoo"),
+                    ]
+                    for idx, (amt, mode, src, note) in enumerate(amounts_modes):
+                        created_at = f"{today_str}T{times[idx]}"
+                        ref = f"KS-{today_str.replace('-', '')}-{idx+1:03d}"
+                        demo_tx_records.append((ks_id, created_at, amt, mode, src, "success", ref, note))
+
+                conn.executemany(
+                    """
+                    INSERT INTO transactions (
+                        shop_id, created_at, amount, mode, source,
+                        status, reference, customer_note
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    demo_tx_records,
+                )
+                print(f"✓ Seeded {len(demo_tx_records)} demo live transactions across all 4 shops for {today_str}.")
+            else:
+                print(f"ℹ Transactions table already has {tx_count} records. Keeping existing data.")
 
         print("\n--> Database seeding completed successfully!")
     finally:

@@ -12,10 +12,13 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
+import Sidebar from './components/Sidebar';
+import DesktopTopBar from './components/DesktopTopBar';
 import HomeScreen from './components/HomeScreen';
 import EntryFormScreen from './components/EntryFormScreen';
 import WhatIfScreen from './components/WhatIfScreen';
 import UdhaarScreen from './components/UdhaarScreen';
+import PaymentsScreen from './components/PaymentsScreen';
 import LoadingSpinner from './components/LoadingSpinner';
 import ErrorScreen from './components/ErrorScreen';
 import { getShops, getForecast } from './api';
@@ -32,6 +35,9 @@ export default function App() {
   });
 
   const t = TRANSLATIONS[language] || TRANSLATIONS.en;
+
+  // Cached top tip for desktop top bar WhatsApp sharing
+  const [topTip, setTopTip] = useState(null);
 
   // Shops & Selected Shop (with localStorage fallback for offline initial opening)
   const [shops, setShops] = useState(() => {
@@ -198,10 +204,18 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-200 flex justify-center">
-      {/* Mobile-first container: max 480px centered on desktop */}
-      <div className="w-full max-w-[480px] min-h-screen bg-slate-50 flex flex-col shadow-2xl border-x border-slate-200 relative">
-        {/* Top Navigation */}
+    <div className="min-h-screen bg-slate-100 flex justify-center">
+      {/* Responsive layout: mobile (< 768px) centered 480px, desktop (md >= 768px) scales up to max-w-7xl */}
+      <div className="w-full max-w-[480px] md:max-w-7xl min-h-screen flex flex-col md:flex-row bg-slate-50 shadow-2xl md:border-x border-slate-200 relative">
+        {/* Desktop Left Sidebar (width 240px, visible on md and up) */}
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          language={language}
+          onSelectLanguage={handleSelectLanguage}
+        />
+
+        {/* Mobile Top Navigation (visible on mobile only, < 768px) */}
         <Navbar
           shops={shops}
           selectedShopId={selectedShopId}
@@ -210,82 +224,106 @@ export default function App() {
           onSelectLanguage={handleSelectLanguage}
         />
 
-        {/* Main Content Area */}
-        <main className="flex-1 p-4 overflow-y-auto">
-          {/* Offline Banner when showing cached forecast */}
-          {offlineDate && (
-            <div className="mb-3.5 p-3.5 bg-amber-500 text-slate-950 rounded-2xl shadow-md flex items-center justify-between gap-3 animate-fadeIn">
-              <div className="flex items-center gap-2.5 font-black text-xs sm:text-sm">
-                <WifiOff className="w-5 h-5 flex-shrink-0 text-slate-950" strokeWidth={2.5} />
-                <span>{t.offlineBanner || 'Offline - showing last saved forecast'} ({offlineDate})</span>
+        {/* Main Content Column across desktop and tablet */}
+        <div className="flex-1 flex flex-col min-w-0 bg-slate-50">
+          {/* Desktop Top Bar with Shop Picker, Refresh & WhatsApp (md and up) */}
+          <DesktopTopBar
+            shops={shops}
+            selectedShopId={selectedShopId}
+            onSelectShop={(id) => setSelectedShopId(id)}
+            forecastData={forecastData}
+            topTip={topTip}
+            language={language}
+            onRefresh={() => loadForecast(selectedShopId, true)}
+            isRefreshing={isRefreshing}
+          />
+
+          {/* Main Content Area */}
+          <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto">
+            {/* Offline Banner when showing cached forecast */}
+            {offlineDate && (
+              <div className="mb-4 p-3.5 bg-amber-500 text-slate-950 rounded-2xl shadow-sm flex items-center justify-between gap-3 animate-fadeIn">
+                <div className="flex items-center gap-2.5 font-black text-xs sm:text-sm">
+                  <WifiOff className="w-5 h-5 flex-shrink-0 text-slate-950" strokeWidth={2.5} />
+                  <span>{t.offlineBanner || 'Offline - showing last saved forecast'} ({offlineDate})</span>
+                </div>
+                <span className="text-[10px] font-black tracking-wider bg-black/15 text-slate-950 px-2 py-0.5 rounded-md uppercase">
+                  Offline
+                </span>
               </div>
-              <span className="text-[10px] font-black tracking-wider bg-black/15 text-slate-950 px-2 py-0.5 rounded-md uppercase">
-                Offline
-              </span>
-            </div>
-          )}
+            )}
 
-          {error ? (
-            <ErrorScreen
-              errorDetail={error}
-              language={language}
-              onRetry={() => {
-                if (!shops.length) {
-                  loadShops();
-                } else if (selectedShopId) {
-                  loadForecast(selectedShopId);
+            {error ? (
+              <ErrorScreen
+                errorDetail={error}
+                language={language}
+                onRetry={() => {
+                  if (!shops.length) {
+                    loadShops();
+                  } else if (selectedShopId) {
+                    loadForecast(selectedShopId);
+                  }
+                }}
+              />
+            ) : isLoading ? (
+              <LoadingSpinner
+                language={language}
+                message={
+                  isWakingUp
+                    ? 'Waking up the server, this can take up to a minute...'
+                    : undefined
                 }
-              }}
-            />
-          ) : isLoading ? (
-            <LoadingSpinner
-              language={language}
-              message={
-                isWakingUp
-                  ? 'Waking up the server, this can take up to a minute...'
-                  : undefined
-              }
-            />
-          ) : (
-            <>
-              {activeTab === 'home' && (
-                <HomeScreen
-                  forecastData={forecastData}
-                  language={language}
-                  onRefresh={() => loadForecast(selectedShopId, true)}
-                  isRefreshing={isRefreshing}
-                />
-              )}
+              />
+            ) : (
+              <>
+                {activeTab === 'home' && (
+                  <HomeScreen
+                    forecastData={forecastData}
+                    language={language}
+                    onRefresh={() => loadForecast(selectedShopId, true)}
+                    isRefreshing={isRefreshing}
+                    onTopTipLoaded={(tip) => setTopTip(tip)}
+                  />
+                )}
 
-              {activeTab === 'add' && (
-                <EntryFormScreen
-                  shopId={selectedShopId}
-                  defaultDate={forecastData?.data_ends_on}
-                  language={language}
-                  onSuccessReturnHome={handleEntrySaved}
-                />
-              )}
+                {activeTab === 'add' && (
+                  <EntryFormScreen
+                    shopId={selectedShopId}
+                    defaultDate={forecastData?.data_ends_on}
+                    language={language}
+                    onSuccessReturnHome={handleEntrySaved}
+                  />
+                )}
 
-              {activeTab === 'plan' && (
-                <WhatIfScreen
-                  shopId={selectedShopId}
-                  forecastData={forecastData}
-                  language={language}
-                  onPlanUpdated={handlePlanUpdated}
-                />
-              )}
+                {activeTab === 'plan' && (
+                  <WhatIfScreen
+                    shopId={selectedShopId}
+                    forecastData={forecastData}
+                    language={language}
+                    onPlanUpdated={handlePlanUpdated}
+                  />
+                )}
 
-              {activeTab === 'udhaar' && (
-                <UdhaarScreen
-                  shopId={selectedShopId}
-                  language={language}
-                />
-              )}
-            </>
-          )}
-        </main>
+                {activeTab === 'udhaar' && (
+                  <UdhaarScreen
+                    shopId={selectedShopId}
+                    language={language}
+                  />
+                )}
 
-        {/* Bottom Tab Bar */}
+                {activeTab === 'payments' && (
+                  <PaymentsScreen
+                    shopId={selectedShopId}
+                    language={language}
+                    onDayClosed={() => loadForecast(selectedShopId, true)}
+                  />
+                )}
+              </>
+            )}
+          </main>
+        </div>
+
+        {/* Bottom Tab Bar (Mobile only, < 768px) */}
         <BottomNav
           activeTab={activeTab}
           onTabChange={setActiveTab}

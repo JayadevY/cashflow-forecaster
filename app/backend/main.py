@@ -13,7 +13,9 @@ This server provides REST API endpoints for:
 """
 
 import os
+import random
 import sys
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -49,6 +51,10 @@ from app.backend.schemas import (
     UdhaarOut,
     UdhaarSummaryResponse,
     TipOut,
+    TransactionCreate,
+    TransactionOut,
+    TransactionSummaryOut,
+    CloseDayOut,
 )
 
 # Initialize FastAPI application
@@ -1100,3 +1106,395 @@ def get_shop_tips(
 
     tips = build_tips(shop_id, db=db, forecast=cached_fc)
     return tips
+
+
+# ============================================================================
+# Live Transactions Endpoints
+# ============================================================================
+
+def _format_transaction_row(r: sqlite3.Row) -> dict:
+    """Convert a database row into a dictionary matching TransactionOut."""
+    return {
+        "id": r["id"],
+        "shop_id": r["shop_id"],
+        "created_at": str(r["created_at"]),
+        "amount": float(r["amount"]),
+        "mode": str(r["mode"]),
+        "source": str(r["source"]),
+        "status": str(r["status"]),
+        "reference": r["reference"],
+        "customer_note": r["customer_note"],
+    }
+
+
+@app.post(
+    "/shops/{shop_id}/transactions",
+    response_model=TransactionOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Live Transactions"],
+)
+def create_manual_transaction(
+    shop_id: int,
+    tx_in: TransactionCreate,
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """
+    Record a manual customer transaction (cash or other mode).
+    - Amount must be positive.
+    - Validates mode ('cash', 'upi', 'card', 'netbanking').
+    - Rejects duplicate reference with a plain-language message.
+    """
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    if tx_in.amount <= 0:
+        raise HTTPException(status_code=422, detail="Transaction amount must be greater than zero.")
+
+    if tx_in.reference:
+        existing = db.execute(
+            "SELECT id FROM transactions WHERE reference = ?", (tx_in.reference,)
+        ).fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail="A transaction with this reference already exists.")
+
+    created_at = datetime.now().isoformat()
+
+    try:
+        with db:
+            cursor = db.execute(
+                """
+                INSERT INTO transactions (
+                    shop_id, created_at, amount, mode, source,
+                    status, reference, customer_note
+                ) VALUES (?, ?, ?, ?, 'manual', 'success', ?, ?)
+                """,
+                (
+                    shop_id,
+                    created_at,
+                    float(tx_in.amount),
+                    tx_in.mode,
+                    tx_in.reference,
+                    tx_in.customer_note,
+                ),
+            )
+            tx_id = cursor.lastrowid
+            created_row = db.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="A transaction with this reference already exists.")
+
+    return _format_transaction_row(created_row)
+
+
+@app.get(
+    "/shops/{shop_id}/transactions",
+    response_model=List[TransactionOut],
+    tags=["Live Transactions"],
+)
+def list_transactions(
+    shop_id: int,
+    since: Optional[str] = Query(None, description="ISO timestamp filter; returns transactions created after this time"),
+    limit: int = Query(50, ge=1, le=500),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """
+    Retrieve transactions for a shop, newest first.
+    The 'since' parameter allows efficient polling for live transaction streams.
+    """
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    if since:
+        rows = db.execute(
+            """
+            SELECT * FROM transactions
+            WHERE shop_id = ? AND created_at > ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (shop_id, since, limit),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT * FROM transactions
+            WHERE shop_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (shop_id, limit),
+        ).fetchall()
+
+    return [_format_transaction_row(r) for r in rows]
+
+
+@app.get(
+    "/shops/{shop_id}/transactions/summary",
+    response_model=TransactionSummaryOut,
+    tags=["Live Transactions"],
+)
+def get_transaction_summary(
+    shop_id: int,
+    date: str = Query("today", description="Business date in YYYY-MM-DD or 'today'"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """
+    Summary of transactions for a specific day:
+    - Counts and totals by mode (cash, upi, card, netbanking)
+    - Total cash sales and total digital sales
+    - Timestamp of the most recent transaction
+    """
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    target_date = datetime.now().strftime("%Y-%m-%d") if date.lower() == "today" or not date else date
+
+    rows = db.execute(
+        """
+        SELECT * FROM transactions
+        WHERE shop_id = ? AND status = 'success' AND (created_at LIKE ? OR date(created_at) = ?)
+        ORDER BY created_at ASC
+        """,
+        (shop_id, f"{target_date}%", target_date),
+    ).fetchall()
+
+    by_mode = {"cash": 0.0, "upi": 0.0, "card": 0.0, "netbanking": 0.0}
+    last_tx_time = None
+
+    for r in rows:
+        m = str(r["mode"])
+        amt = float(r["amount"])
+        if m in by_mode:
+            by_mode[m] = round(by_mode[m] + amt, 2)
+        if last_tx_time is None or str(r["created_at"]) > last_tx_time:
+            last_tx_time = str(r["created_at"])
+
+    cash_total = by_mode["cash"]
+    digital_total = round(by_mode["upi"] + by_mode["card"] + by_mode["netbanking"], 2)
+
+    return {
+        "shop_id": shop_id,
+        "date": target_date,
+        "total_count": len(rows),
+        "cash_total": cash_total,
+        "digital_total": digital_total,
+        "by_mode": by_mode,
+        "last_transaction_time": last_tx_time,
+    }
+
+
+@app.post(
+    "/shops/{shop_id}/transactions/simulate",
+    response_model=TransactionOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Live Transactions"],
+)
+def simulate_customer_payment(
+    shop_id: int,
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """
+    Simulate a customer digital payment (UPI, card, or netbanking) for live demo testing.
+    Amount generated randomly between ₹20 and ₹2,000.
+    """
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    common_amounts = [25, 45, 60, 90, 120, 160, 220, 310, 450, 580, 750, 920, 1250, 1680, 1950]
+    base_amt = random.choice(common_amounts)
+    amount = float(base_amt)
+
+    mode = random.choices(["upi", "card", "netbanking"], weights=[0.75, 0.18, 0.07])[0]
+    ref = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    created_at = datetime.now().isoformat()
+    note = f"Simulated {mode.upper()} counter payment"
+
+    with db:
+        cursor = db.execute(
+            """
+            INSERT INTO transactions (
+                shop_id, created_at, amount, mode, source,
+                status, reference, customer_note
+            ) VALUES (?, ?, ?, ?, 'simulated', 'success', ?, ?)
+            """,
+            (shop_id, created_at, amount, mode, ref, note),
+        )
+        tx_id = cursor.lastrowid
+        row = db.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
+
+    return _format_transaction_row(row)
+
+
+@app.delete(
+    "/shops/{shop_id}/transactions/{tid}",
+    tags=["Live Transactions"],
+)
+def delete_transaction(
+    shop_id: int,
+    tid: int,
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """
+    Undo a mistaken manual cash entry within 10 minutes of creation.
+    - Only manual cash transactions can be undone.
+    - Rejects undo if older than 10 minutes.
+    """
+    shop = db.execute("SELECT id FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    row = db.execute(
+        "SELECT * FROM transactions WHERE id = ? AND shop_id = ?", (tid, shop_id)
+    ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+
+    if row["mode"] != "cash" or row["source"] != "manual":
+        raise HTTPException(
+            status_code=400,
+            detail="Only manual cash entries can be undone.",
+        )
+
+    # Check 10-minute window
+    created_str = str(row["created_at"])
+    try:
+        created_dt = datetime.fromisoformat(created_str)
+    except Exception:
+        created_dt = datetime.strptime(created_str[:19], "%Y-%m-%dT%H:%M:%S")
+
+    now_dt = datetime.now()
+    diff_minutes = (now_dt - created_dt).total_seconds() / 60.0
+
+    if diff_minutes > 10.0:
+        raise HTTPException(
+            status_code=400,
+            detail="Manual cash entries can only be undone within 10 minutes of creation.",
+        )
+
+    with db:
+        db.execute("DELETE FROM transactions WHERE id = ?", (tid,))
+
+    return {"message": "Transaction undone successfully", "id": tid}
+
+
+@app.post(
+    "/shops/{shop_id}/transactions/close-day",
+    response_model=CloseDayOut,
+    tags=["Live Transactions"],
+)
+def close_business_day(
+    shop_id: int,
+    date: str = Query("today", description="Business date in YYYY-MM-DD or 'today'"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """
+    Close the day and reconcile daily cash vs digital sales:
+    - Sums all successful CASH transactions into daily_entries.cash_sales (without duplicating).
+    - Records DIGITAL transactions in daily_entries.digital_sales.
+    - CRITICAL ACCOUNTING RULE: Only cash transactions update closing_cash in the till drawer.
+      Digital payments go directly to the bank account and do not alter the physical drawer balance.
+    """
+    shop = db.execute("SELECT * FROM shops WHERE id = ?", (shop_id,)).fetchone()
+    if not shop:
+        raise HTTPException(status_code=404, detail=f"Shop #{shop_id} not found.")
+
+    target_date = datetime.now().strftime("%Y-%m-%d") if date.lower() == "today" or not date else date
+
+    rows = db.execute(
+        """
+        SELECT * FROM transactions
+        WHERE shop_id = ? AND status = 'success' AND (created_at LIKE ? OR date(created_at) = ?)
+        """,
+        (shop_id, f"{target_date}%", target_date),
+    ).fetchall()
+
+    cash_tx_total = round(sum(float(r["amount"]) for r in rows if str(r["mode"]) == "cash"), 2)
+    digital_tx_total = round(
+        sum(float(r["amount"]) for r in rows if str(r["mode"]) in ("upi", "card", "netbanking")), 2
+    )
+
+    with db:
+        entry = db.execute(
+            "SELECT * FROM daily_entries WHERE shop_id = ? AND date = ?",
+            (shop_id, target_date),
+        ).fetchone()
+
+        if entry:
+            prev_tx_cash = float(entry["transaction_cash_sales"] or 0.0)
+            cash_diff = round(cash_tx_total - prev_tx_cash, 2)
+            new_cash_sales = round(float(entry["cash_sales"]) + cash_diff, 2)
+            new_closing_cash = round(float(entry["closing_cash"]) + cash_diff, 2)
+
+            db.execute(
+                """
+                UPDATE daily_entries
+                SET cash_sales = ?,
+                    digital_sales = ?,
+                    transaction_cash_sales = ?,
+                    closing_cash = ?
+                WHERE id = ?
+                """,
+                (
+                    new_cash_sales,
+                    digital_tx_total,
+                    cash_tx_total,
+                    new_closing_cash,
+                    entry["id"],
+                ),
+            )
+            cash_added = cash_diff
+            total_cash_sales = new_cash_sales
+            final_closing_cash = new_closing_cash
+        else:
+            prev_row = db.execute(
+                """
+                SELECT closing_cash FROM daily_entries
+                WHERE shop_id = ? AND date < ?
+                ORDER BY date DESC LIMIT 1
+                """,
+                (shop_id, target_date),
+            ).fetchone()
+
+            prev_closing = float(prev_row["closing_cash"]) if prev_row else float(shop["opening_cash"])
+            closing_cash = round(prev_closing + cash_tx_total, 2)
+
+            db.execute(
+                """
+                INSERT INTO daily_entries (
+                    shop_id, date, cash_sales, credit_given, udhaar_collected,
+                    expenses, owner_withdrawal, unplanned_outflow, closing_cash,
+                    digital_sales, transaction_cash_sales
+                ) VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0.0, 0.0, ?, ?, ?)
+                """,
+                (
+                    shop_id,
+                    target_date,
+                    cash_tx_total,
+                    closing_cash,
+                    digital_tx_total,
+                    cash_tx_total,
+                ),
+            )
+            cash_added = cash_tx_total
+            total_cash_sales = cash_tx_total
+            final_closing_cash = closing_cash
+
+    clear_shop_cache(shop_id)
+
+    return {
+        "shop_id": shop_id,
+        "date": target_date,
+        "cash_sales_added": cash_added,
+        "total_cash_sales": total_cash_sales,
+        "digital_sales": digital_tx_total,
+        "closing_cash": final_closing_cash,
+        "message": (
+            f"Business day {target_date} closed successfully. "
+            f"Added ₹{int(cash_added):,} cash to drawer. "
+            f"Digital sales ₹{int(digital_tx_total):,} sent to bank."
+        ),
+    }

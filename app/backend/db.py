@@ -81,10 +81,19 @@ def init_db(db_path: Path = None) -> None:
                 owner_withdrawal REAL NOT NULL DEFAULT 0.0,
                 unplanned_outflow REAL NOT NULL DEFAULT 0.0,
                 closing_cash REAL NOT NULL,
+                digital_sales REAL DEFAULT 0.0,
+                transaction_cash_sales REAL DEFAULT 0.0,
                 FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
                 UNIQUE(shop_id, date)
             );
         """)
+
+        # Migration helper for existing daily_entries tables missing digital_sales or transaction_cash_sales
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(daily_entries)").fetchall()]
+        if "digital_sales" not in columns:
+            conn.execute("ALTER TABLE daily_entries ADD COLUMN digital_sales REAL DEFAULT 0.0;")
+        if "transaction_cash_sales" not in columns:
+            conn.execute("ALTER TABLE daily_entries ADD COLUMN transaction_cash_sales REAL DEFAULT 0.0;")
 
         # Table 3: Planned Payments
         conn.execute("""
@@ -115,6 +124,22 @@ def init_db(db_path: Path = None) -> None:
             );
         """)
 
+        # Table 5: Transactions (Live and recorded shop payments)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shop_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                amount REAL NOT NULL,
+                mode TEXT NOT NULL CHECK(mode IN ('cash', 'upi', 'card', 'netbanking')),
+                source TEXT NOT NULL CHECK(source IN ('manual', 'simulated', 'gateway')),
+                status TEXT NOT NULL DEFAULT 'success' CHECK(status IN ('success', 'failed', 'pending')),
+                reference TEXT UNIQUE,
+                customer_note TEXT,
+                FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
+            );
+        """)
+
         # Helpful indexes for fast queries
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_daily_entries_shop_date
@@ -131,6 +156,14 @@ def init_db(db_path: Path = None) -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_udhaar_shop_due
             ON udhaar(shop_id, due_date);
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_transactions_shop_created
+            ON transactions(shop_id, created_at);
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_transactions_shop_mode
+            ON transactions(shop_id, mode);
         """)
 
     conn.close()

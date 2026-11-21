@@ -270,6 +270,63 @@ class TipOut(BaseModel):
 
 
 # ============================================================================
+# Live Transactions Schemas
+# ============================================================================
+
+class TransactionCreate(BaseModel):
+    """Data sent to record a manual transaction."""
+    amount: float = Field(..., gt=0, description="Transaction amount in rupees (must be positive)")
+    mode: str = Field(..., description="Payment method: 'cash', 'upi', 'card', or 'netbanking'")
+    reference: Optional[str] = Field(None, description="Optional payment reference or UTR")
+    customer_note: Optional[str] = Field(None, description="Optional note or bill description")
+
+    @field_validator("mode")
+    def validate_mode(cls, v: str) -> str:
+        valid_modes = {"cash", "upi", "card", "netbanking"}
+        if v not in valid_modes:
+            raise ValueError(f"Invalid payment mode '{v}'. Must be one of: {sorted(list(valid_modes))}")
+        return v
+
+
+class TransactionOut(BaseModel):
+    """Complete transaction record returned by the database."""
+    id: int
+    shop_id: int
+    created_at: str
+    amount: float
+    mode: str
+    source: str
+    status: str
+    reference: Optional[str] = None
+    customer_note: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TransactionSummaryOut(BaseModel):
+    """Summary of transactions for a specific day."""
+    shop_id: int
+    date: str
+    total_count: int
+    cash_total: float
+    digital_total: float
+    by_mode: Dict[str, float]
+    last_transaction_time: Optional[str] = None
+
+
+class CloseDayOut(BaseModel):
+    """Result of closing the business day."""
+    shop_id: int
+    date: str
+    cash_sales_added: float
+    total_cash_sales: float
+    digital_sales: float
+    closing_cash: float
+    message: str
+
+
+# ============================================================================
 # System Health Schema
 # ============================================================================
 
