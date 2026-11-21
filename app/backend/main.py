@@ -12,6 +12,7 @@ This server provides REST API endpoints for:
 8. System health check
 """
 
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -30,6 +31,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.forecast import forecast_cash_risk, FESTIVAL_DATES, collect_cv_residuals, get_best_model_name
 from app.backend.db import get_connection, get_db, init_db
 from app.backend.insights import build_tips
+from app.backend.seed import seed_database
 from app.backend.schemas import (
     DailyEntryCreate,
     DailyEntryOut,
@@ -56,10 +58,19 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS for the future React frontend running on Vite default port (5173)
+# Read allowed CORS origins from an env var CORS_ORIGINS (comma separated),
+# defaulting to http://localhost:5173,http://localhost:5174
+cors_env = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174")
+allowed_origins = [origin.strip() for origin in cors_env.split(",") if origin.strip()]
+# Add 127.0.0.1 equivalents for local convenience if localhost is included
+if "http://localhost:5173" in allowed_origins and "http://127.0.0.1:5173" not in allowed_origins:
+    allowed_origins.append("http://127.0.0.1:5173")
+if "http://localhost:5174" in allowed_origins and "http://127.0.0.1:5174" not in allowed_origins:
+    allowed_origins.append("http://127.0.0.1:5174")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,8 +91,20 @@ def clear_shop_cache(shop_id: int) -> None:
 
 @app.on_event("startup")
 def on_startup():
-    """Ensure database tables exist when the server starts up."""
+    """Ensure database tables exist and auto-run demo seed if database has no shops."""
     init_db()
+    # Check if database has no shops (e.g. fresh Render deployment or first run)
+    if os.getenv("DISABLE_AUTO_SEED", "").lower() not in ("1", "true", "yes"):
+        conn = get_connection()
+        try:
+            shop_count = conn.execute("SELECT COUNT(*) AS c FROM shops").fetchone()["c"]
+            if shop_count == 0:
+                print("--> Fresh instance detected (no shops in DB). Auto-running demo seed...")
+                seed_database()
+        except Exception as e:
+            print(f"Warning: Auto-seed on startup failed: {e}")
+        finally:
+            conn.close()
 
 
 # ============================================================================

@@ -4,13 +4,16 @@ Living notes for the Daily Cash-Flow Forecaster. Update this file as the work mo
 
 ## Current phase
 
-Frontend application, WhatsApp sharing, and Progressive Web App (PWA) complete and live. Added 1-click WhatsApp summary share (sub-400 characters, localized across EN/Tamil/Hindi) under the cash meter, full PWA offline shell via `vite-plugin-pwa` with webmanifest and SVG/PNG icons, and automatic `localStorage` caching with offline banner ('Offline - showing last saved forecast (<date>)') when the backend is unreachable. All 25 API tests passing.
+Full-stack free-tier deployment preparation complete. The FastAPI backend is configured for Render (Procfile-free `uvicorn` start command, `render.yaml` blueprint, auto-seeding on fresh database startup, dynamic `CORS_ORIGINS` parsing, and a lean `requirements-backend.txt`). The React frontend is configured for Vercel (`app/frontend/vercel.json` SPA rewrites, dynamic `VITE_API_URL` configuration, and cold-start resilience displaying 'Waking up the server, this can take up to a minute...' with automatic 90s retries). All 25 API tests passing and production frontend build compiling cleanly.
 
 ## Files done
 
-- `README.md` — what the project is, backend and frontend run instructions
+- `README.md` — project overview, run instructions, and complete step-by-step deployment guide for Render and Vercel
 - `PROJECT_STATE.md` — this progress log
-- `requirements.txt` — dependencies (pandas, numpy, matplotlib, seaborn, jupyter, ipykernel, scikit-learn, statsmodels, xgboost, fastapi, uvicorn, pydantic, httpx, pytest)
+- `requirements.txt` — full development dependencies (including notebook and EDA tools)
+- `requirements-backend.txt` — lean production backend dependencies (FastAPI, uvicorn, pydantic, pandas, numpy, scikit-learn, statsmodels, xgboost)
+- `render.yaml` — Render Blueprint specification for zero-configuration backend deployment
+- `app/frontend/vercel.json` — single-page application rewrite routing rules for Vercel
 - `.gitignore` — ignores SQLite databases (`cashflow.db`, `*.db`) and python caches
 - `src/generate_data.py` — builds two years of daily cash-flow numbers with cash drawer dynamics
 - `data/tea_stall.csv`, `data/vegetable_shop.csv`, `data/tiffin_center.csv`, `data/kirana.csv` — one file per shop
@@ -124,6 +127,14 @@ Frontend application, WhatsApp sharing, and Progressive Web App (PWA) complete a
   - 1-Click WhatsApp Share: Placed prominent 54px WhatsApp-green button directly under the Home screen Cash Meter. Generates a compact, URL-encoded `wa.me` message strictly under 400 characters (enforced via character budget checks and dynamic tip truncation). Includes shop name, today's cash, safety line, status word (Safe/Watch/Danger), worst day + risk %, and top business tip. Fully localized across English, Tamil, and Hindi with Indian numbering rupee formatting (`₹1,25,472`).
   - Progressive Web App (PWA): Configured `vite-plugin-pwa` with automatic service worker registration, standalone display mode, theme color `#0f172a`, and generated 192x192 / 512x512 PNG/SVG icons and Apple touch icons. Pre-caches the full application shell for offline availability.
   - Offline Fallback & Sync: When the backend API is unreachable, `App.jsx` seamlessly falls back to the most recently saved forecast and shop metadata stored in `localStorage`, displaying a high-contrast top notification banner: `"Offline - showing last saved forecast (<date>)"` with an offline indicator icon.
+- Free-Tier Deployment Architecture (Render & Vercel):
+  - Lean Backend Specification: Created `requirements-backend.txt` stripping out heavy notebook, matplotlib, and seaborn packages, slashing deployment build times and memory footprint.
+  - Procfile-Free Start Command: Standardized on `uvicorn app.backend.main:app --host 0.0.0.0 --port $PORT` directly compatible with container and cloud platforms.
+  - Fresh Instance Auto-Seeding: Backend automatically checks for shop records in SQLite on startup and triggers the demo seed (4 shops, 365 days of entries, 28 udhaar accounts) if empty.
+  - Dynamic CORS Configuration: Reads comma-separated origins from `CORS_ORIGINS` with local dev fallbacks (`http://localhost:5173,http://localhost:5174`).
+  - Render Blueprint: Provided `render.yaml` for automated deployment with `/health` checks and Python 3.11.9 runtime.
+  - Frontend Vercel Single-Page Routing: Added `app/frontend/vercel.json` rewriting all routes to `/index.html`.
+  - Cold-Start Wake-Up & Retry: Frontend detects cold starts (> 4s), displays `"Waking up the server, this can take up to a minute..."`, and retries for up to 90 seconds before displaying an error.
 
 ## Results
 
@@ -198,4 +209,4 @@ None yet.
 
 ## Next step
 
-deploy, README, demo video.
+demo video.

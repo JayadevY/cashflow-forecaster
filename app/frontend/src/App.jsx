@@ -58,6 +58,7 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [offlineDate, setOfflineDate] = useState(null);
+  const [isWakingUp, setIsWakingUp] = useState(false);
 
   // Persist language selection
   const handleSelectLanguage = (lang) => {
@@ -65,35 +66,63 @@ export default function App() {
     localStorage.setItem('cashflow_lang', lang);
   };
 
-  // Fetch shops list on initial mount
+  // Fetch shops list on initial mount with cold-start wake-up and retry up to 90s
   const loadShops = async () => {
-    try {
-      setError(null);
-      const data = await getShops();
-      setShops(data);
-      if (data && data.length > 0) {
-        // Cache shops for offline use
-        try {
-          localStorage.setItem('cached_shops', JSON.stringify(data));
-        } catch (_) {}
+    const startTime = Date.now();
+    const maxRetryMs = 90000; // 90 seconds
+    const wakeTimer = setTimeout(() => {
+      setIsWakingUp(true);
+    }, 4000);
 
-        setSelectedShopId((prev) => prev || data[0].id);
-      }
-    } catch (err) {
-      // If offline, check if we have cached shops
+    setIsLoading(true);
+    setError(null);
+
+    while (Date.now() - startTime < maxRetryMs) {
       try {
-        const cachedRaw = localStorage.getItem('cached_shops');
-        if (cachedRaw) {
-          const cachedShops = JSON.parse(cachedRaw);
-          if (cachedShops.length > 0) {
-            setShops(cachedShops);
-            setSelectedShopId((prev) => prev || cachedShops[0].id);
-            return;
-          }
+        const data = await getShops();
+        clearTimeout(wakeTimer);
+        setIsWakingUp(false);
+        setShops(data);
+        if (data && data.length > 0) {
+          try {
+            localStorage.setItem('cached_shops', JSON.stringify(data));
+          } catch (_) {}
+          setSelectedShopId((prev) => prev || data[0].id);
         }
-      } catch (_) {}
-      setError(err.message || 'Cannot reach the server.');
+        setIsLoading(false);
+        return;
+      } catch (err) {
+        if (Date.now() - startTime >= 4000) {
+          setIsWakingUp(true);
+        }
+        // If within 90s, wait 2s before retrying
+        if (Date.now() - startTime + 2000 < maxRetryMs) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        } else {
+          break;
+        }
+      }
     }
+
+    clearTimeout(wakeTimer);
+    setIsWakingUp(false);
+
+    // If offline or unreachable after 90s, check cached shops
+    try {
+      const cachedRaw = localStorage.getItem('cached_shops');
+      if (cachedRaw) {
+        const cachedShops = JSON.parse(cachedRaw);
+        if (cachedShops.length > 0) {
+          setShops(cachedShops);
+          setSelectedShopId((prev) => prev || cachedShops[0].id);
+          setIsLoading(false);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    setIsLoading(false);
+    setError('Cannot reach the server after retrying. Is it running?');
   };
 
   // Fetch forecast whenever selected shop changes
@@ -209,7 +238,14 @@ export default function App() {
               }}
             />
           ) : isLoading ? (
-            <LoadingSpinner language={language} />
+            <LoadingSpinner
+              language={language}
+              message={
+                isWakingUp
+                  ? 'Waking up the server, this can take up to a minute...'
+                  : undefined
+              }
+            />
           ) : (
             <>
               {activeTab === 'home' && (
