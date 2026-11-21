@@ -22,11 +22,13 @@ export function formatRupees(amount) {
  * Format an ISO date (YYYY-MM-DD) into a friendly short label:
  * e.g. "2026-11-03" -> "Tue, 3 Nov"
  */
-export function formatFriendlyDate(dateStr) {
+export function formatFriendlyDate(dateStr, language = 'en') {
   if (!dateStr) return '';
+  const localeMap = { en: 'en-IN', ta: 'ta-IN', hi: 'hi-IN' };
+  const locale = localeMap[language] || 'en-IN';
   try {
     const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-IN', {
+    return d.toLocaleDateString(locale, {
       weekday: 'short',
       day: 'numeric',
       month: 'short',

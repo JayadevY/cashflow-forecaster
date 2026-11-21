@@ -89,7 +89,12 @@ function getSeverityBadge(severity, t) {
   };
 }
 
-export default function TipsCard({ shopId, language = 'en', isRefreshing }) {
+export default function TipsCard({
+  shopId,
+  language = 'en',
+  isRefreshing,
+  onTopTipLoaded,
+}) {
   const t = TRANSLATIONS[language] || TRANSLATIONS.en;
   const [tips, setTips] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,7 +106,11 @@ export default function TipsCard({ shopId, language = 'en', isRefreshing }) {
     setError(null);
     try {
       const data = await getShopTips(id);
-      setTips(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setTips(list);
+      if (onTopTipLoaded && list.length > 0) {
+        onTopTipLoaded(list[0]);
+      }
     } catch (err) {
       setError(err.message || 'Could not load tips');
     } finally {

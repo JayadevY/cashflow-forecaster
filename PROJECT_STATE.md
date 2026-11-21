@@ -4,7 +4,7 @@ Living notes for the Daily Cash-Flow Forecaster. Update this file as the work mo
 
 ## Current phase
 
-Frontend application & plain-language business insight tips complete and live. Added dedicated Udhaar credit tracker and business tips engine (`app/backend/insights.py`, `GET /shops/{id}/tips`) with 7 pattern rules, multi-tier severity sorting (danger > watch > info), and mobile-first `TipsCard` on the Home screen in English, Tamil (தமிழ்), and Hindi (हिंदी). All 25 API tests passing.
+Frontend application, WhatsApp sharing, and Progressive Web App (PWA) complete and live. Added 1-click WhatsApp summary share (sub-400 characters, localized across EN/Tamil/Hindi) under the cash meter, full PWA offline shell via `vite-plugin-pwa` with webmanifest and SVG/PNG icons, and automatic `localStorage` caching with offline banner ('Offline - showing last saved forecast (<date>)') when the backend is unreachable. All 25 API tests passing.
 
 ## Files done
 
@@ -34,20 +34,22 @@ Frontend application & plain-language business insight tips complete and live. A
 - `app/backend/main.py` — FastAPI application with 13 REST endpoints (including Udhaar management and `/shops/{id}/tips`), CORS for localhost:5173, and forecast caching
 - `tests/test_api.py` — 25 pytest tests covering health, shop registration, daily entries, closing cash math, basic/full forecasts (`data_ends_on`), planned-payments date validation, what-if simulation verdicts (`too_large`, `ok`, `better_day_exists`), input validation (`date=4`, `amount=0`, `max_safe_amount`), complete Udhaar lifecycles (add, partial pay, overpay rejection, auto-close, overdue summary), and insight tips (weekday accuracy, rent-day appearance, <8-week history skipping, max 5 sorting, and overdue udhaar cash cover)
 - `app/backend/cashflow.db` — seeded local SQLite database
-- `app/frontend/package.json` — React 18, Vite, Tailwind CSS, Recharts, Lucide React dependencies
-- `app/frontend/vite.config.js` — Vite dev server config running on port 5173
+- `app/frontend/package.json` — React 18, Vite, Tailwind CSS, Recharts, Lucide React, and `vite-plugin-pwa` dependencies
+- `app/frontend/vite.config.js` — Vite dev server config with VitePWA plugin, manifest, and precache service worker
+- `app/frontend/public/` — PWA icons: `pwa-192x192.png`, `pwa-512x512.png`, `pwa-192x192.svg`, `pwa-512x512.svg`, `favicon.svg`, `apple-touch-icon.png`
 - `app/frontend/tailwind.config.js`, `postcss.config.js` — mobile-first styling and theme setup
-- `app/frontend/index.html` — responsive mobile meta viewport and title
+- `app/frontend/index.html` — responsive mobile meta viewport, PWA manifest links, Apple web app meta tags, and title
 - `app/frontend/src/config.js` — single config file defining API base URL (`http://127.0.0.1:8000`)
 - `app/frontend/src/api.js` — API client module for all backend endpoints (daily entries, forecasts, what-if, Udhaar tracking, and tips)
-- `app/frontend/src/i18n.js` — everyday language translations & tip sentence renderers in English, Tamil (தமிழ்), and Hindi (हिंदी) across all screens
-- `app/frontend/src/utils/formatters.js` — Indian numbering rupee formatting (`₹1,25,472`) and color-blind status cues
+- `app/frontend/src/i18n.js` — everyday language translations, tip sentence renderers, and WhatsApp message labels in English, Tamil (தமிழ்), and Hindi (हिंदी)
+- `app/frontend/src/utils/formatters.js` — Indian numbering rupee formatting (`₹1,25,472`), localized date formatter, and color-blind status cues
+- `app/frontend/src/utils/whatsapp.js` — WhatsApp message builder strictly under 400 characters and 1-click sharing launcher
 - `app/frontend/src/components/StatusBadge.jsx` — color-blind friendly badge (Safe / Watch / Danger) with icons
 - `app/frontend/src/components/CashMeterCard.jsx` — big cash drawer balance card, safety line, and worst-day alert
 - `app/frontend/src/components/ForecastChart.jsx` — 7-day Recharts chart with shaded p10-p90 uncertainty band and dashed safety line
 - `app/frontend/src/components/DayRiskList.jsx` — 7-day breakdown cards with weekday, date, risk %, and status badge
 - `app/frontend/src/components/TipsCard.jsx` — "Tips for you" business insight card on Home screen with icons, severity badges, and localized advice
-- `app/frontend/src/components/HomeScreen.jsx` — Tab 1 main dashboard with cash meter, chart, day list, and tips card
+- `app/frontend/src/components/HomeScreen.jsx` — Tab 1 main dashboard with cash meter, WhatsApp share button, chart, day list, and tips card
 - `app/frontend/src/components/EntryFormScreen.jsx` — Tab 2 daily transaction entry with auto-closing cash feedback
 - `app/frontend/src/components/WhatIfScreen.jsx` — Tab 3 scenario planner, max safe amount, and planned payment tracker
 - `app/frontend/src/components/UdhaarScreen.jsx` — Tab 4 customer credit tracker (outstanding balance, overdue alerts, collect today list with inline quick payments, and credit creation form)
@@ -55,7 +57,7 @@ Frontend application & plain-language business insight tips complete and live. A
 - `app/frontend/src/components/BottomNav.jsx` — fixed bottom navigation bar with 4 large touch tabs
 - `app/frontend/src/components/ErrorScreen.jsx` — friendly server offline screen with retry
 - `app/frontend/src/components/LoadingSpinner.jsx` — animated loading spinner
-- `app/frontend/src/App.jsx`, `main.jsx` — main application entry and state coordinator
+- `app/frontend/src/App.jsx`, `main.jsx` — main application entry, service worker registration, and localStorage offline forecast caching with banner
 
 ## Decisions
 
@@ -117,6 +119,11 @@ Frontend application & plain-language business insight tips complete and live. A
   - Color-blind accessible indicators: every status pairs a distinct shape icon (Check, Triangle, Octagon) with an explicit text label (Safe, Watch, Danger) and high-contrast color styling.
   - Indian numbering system: all currency amounts formatted with standard Indian commas (`₹1,25,472`).
   - Seamless 4-tab flow: Tab 1 Home (meter card, Recharts 7-day projection band, day list), Tab 2 Add Today (daily bookkeeping with automatic closing cash calculation), Tab 3 Plan Payment (interactive what-if scenario testing and planned payment tracking), Tab 4 Udhaar (customer credit tracker and recovery queue).
+
+- WhatsApp Sharing & PWA Offline Architecture:
+  - 1-Click WhatsApp Share: Placed prominent 54px WhatsApp-green button directly under the Home screen Cash Meter. Generates a compact, URL-encoded `wa.me` message strictly under 400 characters (enforced via character budget checks and dynamic tip truncation). Includes shop name, today's cash, safety line, status word (Safe/Watch/Danger), worst day + risk %, and top business tip. Fully localized across English, Tamil, and Hindi with Indian numbering rupee formatting (`₹1,25,472`).
+  - Progressive Web App (PWA): Configured `vite-plugin-pwa` with automatic service worker registration, standalone display mode, theme color `#0f172a`, and generated 192x192 / 512x512 PNG/SVG icons and Apple touch icons. Pre-caches the full application shell for offline availability.
+  - Offline Fallback & Sync: When the backend API is unreachable, `App.jsx` seamlessly falls back to the most recently saved forecast and shop metadata stored in `localStorage`, displaying a high-contrast top notification banner: `"Offline - showing last saved forecast (<date>)"` with an offline indicator icon.
 
 ## Results
 
@@ -191,4 +198,4 @@ None yet.
 
 ## Next step
 
-Voice entry or WhatsApp share.
+deploy, README, demo video.

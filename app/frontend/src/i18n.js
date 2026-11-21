@@ -7,7 +7,7 @@
  * 3. Hindi (हिंदी)
  */
 
-import { formatRupees } from './utils/formatters';
+import { formatRupees } from './utils/formatters.js';
 
 export const TRANSLATIONS = {
   en: {
@@ -103,6 +103,17 @@ export const TRANSLATIONS = {
     severityWatch: "Watch",
     severityDanger: "Danger",
     noTipsAvailable: "Keep adding daily entries. Tips will appear once you have 8 weeks of history.",
+
+    // WhatsApp Share & Offline PWA
+    shareWhatsAppBtn: "Share on WhatsApp",
+    waCashUpdate: "Cash Update",
+    waCash: "Cash in Drawer",
+    waSafetyLine: "Safety Line",
+    waStatus: "Status",
+    waWorstDay: "Worst Day",
+    waRisk: "risk",
+    waTip: "Tip",
+    offlineBanner: "Offline - showing last saved forecast",
 
     // Network / Error states
     serverErrorTitle: "Cannot reach the server. Is it running?",
@@ -205,6 +216,17 @@ export const TRANSLATIONS = {
     severityDanger: "ஆபத்து",
     noTipsAvailable: "தொடர்ந்து தினசரி வரவு-செலவை பதிவு செய்யவும். 8 வாரங்கள் முடிந்ததும் குறிப்புகள் தோன்றும்.",
 
+    // WhatsApp Share & Offline PWA
+    shareWhatsAppBtn: "WhatsApp-ல் பகிரவும்",
+    waCashUpdate: "பண நிலவரம்",
+    waCash: "கல்லா பணம்",
+    waSafetyLine: "பாதுகாப்பு எல்லை",
+    waStatus: "நிலை",
+    waWorstDay: "அதிக ஆபத்து நாள்",
+    waRisk: "ஆபத்து",
+    waTip: "குறிப்பு",
+    offlineBanner: "இணைப்பில்லை - கடைசியாக சேமிக்கப்பட்ட கணிப்பு",
+
     // Network / Error states
     serverErrorTitle: "சேவையகத்தை இணைக்க முடியவில்லை. இயங்குகிறதா?",
     serverErrorDesc: "'uvicorn app.backend.main:app --reload' இயங்குகிறதா என்பதை உறுதிப்படுத்தவும்.",
@@ -305,6 +327,17 @@ export const TRANSLATIONS = {
     severityWatch: "सतर्क",
     severityDanger: "खतरा",
     noTipsAvailable: "रोज़ाना हिसाब दर्ज करते रहें। 8 हफ्ते का डेटा होने पर उपयोगी सुझाव दिखेंगे।",
+
+    // WhatsApp Share & Offline PWA
+    shareWhatsAppBtn: "व्हाट्सएप पर शेयर करें",
+    waCashUpdate: "नकद स्थिति",
+    waCash: "गल्ले में नकद",
+    waSafetyLine: "सुरक्षा सीमा",
+    waStatus: "स्थिति",
+    waWorstDay: "सबसे जोखिम भरा दिन",
+    waRisk: "जोखिम",
+    waTip: "सुझाव",
+    offlineBanner: "ऑफ़लाइन - अंतिम सहेजा गया अनुमान",
 
     // Network / Error states
     serverErrorTitle: "सर्वर से संपर्क नहीं हो पा रहा है। क्या यह चालू है?",

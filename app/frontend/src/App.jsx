@@ -19,9 +19,11 @@ import UdhaarScreen from './components/UdhaarScreen';
 import LoadingSpinner from './components/LoadingSpinner';
 import ErrorScreen from './components/ErrorScreen';
 import { getShops, getForecast } from './api';
+import { TRANSLATIONS } from './i18n';
+import { WifiOff } from 'lucide-react';
 
 export default function App() {
-  // Active screen tab: 'home' | 'add' | 'plan'
+  // Active screen tab: 'home' | 'add' | 'plan' | 'udhaar'
   const [activeTab, setActiveTab] = useState('home');
 
   // Selected language: 'en' | 'ta' | 'hi'
@@ -29,15 +31,33 @@ export default function App() {
     return localStorage.getItem('cashflow_lang') || 'en';
   });
 
-  // Shops & Selected Shop
-  const [shops, setShops] = useState([]);
-  const [selectedShopId, setSelectedShopId] = useState(null);
+  const t = TRANSLATIONS[language] || TRANSLATIONS.en;
+
+  // Shops & Selected Shop (with localStorage fallback for offline initial opening)
+  const [shops, setShops] = useState(() => {
+    try {
+      const cached = localStorage.getItem('cached_shops');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [selectedShopId, setSelectedShopId] = useState(() => {
+    try {
+      const cachedId = localStorage.getItem('cached_selected_shop_id');
+      return cachedId ? Number(cachedId) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Forecast data for the selected shop
   const [forecastData, setForecastData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [offlineDate, setOfflineDate] = useState(null);
 
   // Persist language selection
   const handleSelectLanguage = (lang) => {
@@ -52,10 +72,26 @@ export default function App() {
       const data = await getShops();
       setShops(data);
       if (data && data.length > 0) {
-        // Default to first shop if none selected
+        // Cache shops for offline use
+        try {
+          localStorage.setItem('cached_shops', JSON.stringify(data));
+        } catch (_) {}
+
         setSelectedShopId((prev) => prev || data[0].id);
       }
     } catch (err) {
+      // If offline, check if we have cached shops
+      try {
+        const cachedRaw = localStorage.getItem('cached_shops');
+        if (cachedRaw) {
+          const cachedShops = JSON.parse(cachedRaw);
+          if (cachedShops.length > 0) {
+            setShops(cachedShops);
+            setSelectedShopId((prev) => prev || cachedShops[0].id);
+            return;
+          }
+        }
+      } catch (_) {}
       setError(err.message || 'Cannot reach the server.');
     }
   };
@@ -73,7 +109,30 @@ export default function App() {
     try {
       const data = await getForecast(shopId);
       setForecastData(data);
+      setOfflineDate(null);
+
+      // Cache last forecast in localStorage for offline shell
+      try {
+        localStorage.setItem(`cached_forecast_${shopId}`, JSON.stringify(data));
+        const saveDate = data.data_ends_on || new Date().toISOString().split('T')[0];
+        localStorage.setItem(`cached_forecast_date_${shopId}`, saveDate);
+        localStorage.setItem('cached_selected_shop_id', String(shopId));
+      } catch (_) {}
     } catch (err) {
+      // If server is unreachable, check localStorage for last saved forecast
+      try {
+        const cachedRaw = localStorage.getItem(`cached_forecast_${shopId}`);
+        const cachedDate = localStorage.getItem(`cached_forecast_date_${shopId}`);
+        if (cachedRaw) {
+          const cachedData = JSON.parse(cachedRaw);
+          setForecastData(cachedData);
+          setOfflineDate(cachedDate || 'cached');
+          setError(null); // Show the offline dashboard with banner
+          return;
+        }
+      } catch (_) {}
+
+      // If no cached forecast exists, show error screen with retry
       setError(err.message || 'Cannot reach the server. Is it running?');
     } finally {
       setIsLoading(false);
@@ -124,6 +183,19 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 p-4 overflow-y-auto">
+          {/* Offline Banner when showing cached forecast */}
+          {offlineDate && (
+            <div className="mb-3.5 p-3.5 bg-amber-500 text-slate-950 rounded-2xl shadow-md flex items-center justify-between gap-3 animate-fadeIn">
+              <div className="flex items-center gap-2.5 font-black text-xs sm:text-sm">
+                <WifiOff className="w-5 h-5 flex-shrink-0 text-slate-950" strokeWidth={2.5} />
+                <span>{t.offlineBanner || 'Offline - showing last saved forecast'} ({offlineDate})</span>
+              </div>
+              <span className="text-[10px] font-black tracking-wider bg-black/15 text-slate-950 px-2 py-0.5 rounded-md uppercase">
+                Offline
+              </span>
+            </div>
+          )}
+
           {error ? (
             <ErrorScreen
               errorDetail={error}
