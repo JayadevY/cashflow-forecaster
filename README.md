@@ -59,12 +59,14 @@
 
 | Screen | Preview | Description |
 | :--- | :---: | :--- |
-| **Home Dashboard** | <img src="docs/screenshots/home.png" width="380" alt="Home Dashboard" /> | Cash meter with safety line, 7-day probabilistic forecast chart, day-by-day risk levels, and automated tips. |
-| **What-If Planner** | <img src="docs/screenshots/whatif.png" width="380" alt="What-If Planner" /> | Evaluates prospective bills, highlights the safest day to pay, and calculates maximum safe amount. |
-| **Udhaar Credit Tracker** | <img src="docs/screenshots/udhaar.png" width="380" alt="Udhaar Tracker" /> | Active ledger of customer credit, overdue alerts, and priority "Collect Today" recovery queue. |
-| **Live Payments & Register** | <img src="docs/screenshots/payments.png" width="380" alt="Live Payments" /> | Real-time counter feed, 1-tap numeric cash keypad, 10-minute undo, and cash vs. bank day reconciliation. |
-| **Multilingual (Tamil / Hindi)** | <img src="docs/screenshots/tamil.png" width="380" alt="Tamil UI" /> | Full localization in everyday Tamil and Hindi with dynamic zero-reload switching. |
-| **Mobile PWA Experience** | <img src="docs/screenshots/mobile.png" width="200" alt="Mobile PWA" /> | Responsive mobile layout with 56px touch targets, fixed bottom navigation bar, and offline support. |
+| **Home Dashboard** | <img src="docs/screenshots/home.png" width="300" alt="Home"> | Cash meter with safety line, 7-day probabilistic forecast chart, day-by-day risk alerts, and automated tips. |
+| **What-If Planner** | <img src="docs/screenshots/whatif.png" width="300" alt="What-if"> | Scenario planner testing prospective expenses, finding the safest day to pay, and calculating max safe amount. |
+| **Udhaar Credit Tracker** | <img src="docs/screenshots/udhaar.png" width="300" alt="Udhaar"> | Customer credit ledger with overdue status alerts and priority "Collect Today" recovery queue. |
+| **Live Payments & Register** | <img src="docs/screenshots/payments.png" width="300" alt="Payments"> | Real-time counter feed, 1-tap numeric cash keypad, 10-minute undo, and cash vs. bank day reconciliation. |
+| **Tamil Localization** | <img src="docs/screenshots/tamil.png" width="300" alt="Tamil"> | Full application localization in conversational Tamil (தமிழ்) with one-click language switching. |
+| **Hindi Localization** | <img src="docs/screenshots/hindi.png" width="300" alt="Hindi"> | Complete interface localization in everyday Hindi (हिंदी) with zero-reload dynamic toggling. |
+| **WhatsApp Share** | <img src="docs/screenshots/whatsapp.png" width="300" alt="WhatsApp"> | One-click formatted WhatsApp status update under 400 characters ready to share with partners or family. |
+| **Mobile PWA Experience** | <img src="docs/screenshots/mobile.png" width="300" alt="Mobile"> | Mobile-first responsive layout with 56px touch targets, fixed bottom navigation bar, and offline support. |
 
 ---
 
