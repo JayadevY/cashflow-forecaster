@@ -9,7 +9,7 @@
  * 5. Displays a friendly offline error screen if backend is unreachable
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
 import Sidebar from './components/Sidebar';
@@ -21,6 +21,7 @@ import UdhaarScreen from './components/UdhaarScreen';
 import PaymentsScreen from './components/PaymentsScreen';
 import LoadingSpinner from './components/LoadingSpinner';
 import ErrorScreen from './components/ErrorScreen';
+import ServerWakeUpScreen from './components/ServerWakeUpScreen';
 import { getShops, getForecast } from './api';
 import { TRANSLATIONS } from './i18n';
 import { WifiOff } from 'lucide-react';
@@ -65,6 +66,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [offlineDate, setOfflineDate] = useState(null);
   const [isWakingUp, setIsWakingUp] = useState(false);
+  const [wakeUpSeconds, setWakeUpSeconds] = useState(0);
+  const isInitialBootRef = useRef(true);
 
   // Persist language selection
   const handleSelectLanguage = (lang) => {
@@ -72,38 +75,61 @@ export default function App() {
     localStorage.setItem('cashflow_lang', lang);
   };
 
-  // Fetch shops list on initial mount with cold-start wake-up and retry up to 90s
+  // Fetch shops list on initial mount with cold-start wake-up and automatic 5s retries up to 90s
   const loadShops = async () => {
     const startTime = Date.now();
     const maxRetryMs = 90000; // 90 seconds
-    const wakeTimer = setTimeout(() => {
-      setIsWakingUp(true);
-    }, 4000);
+    const retryIntervalMs = 5000; // 5 seconds
 
     setIsLoading(true);
     setError(null);
+    setIsWakingUp(false);
+    setWakeUpSeconds(0);
+
+    // 4-second timeout to show waking up if request hangs
+    let wakeTimer = setTimeout(() => {
+      setIsWakingUp(true);
+    }, 4000);
+
+    // Track elapsed seconds ticker
+    const secondTicker = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      setWakeUpSeconds(elapsed);
+    }, 1000);
 
     while (Date.now() - startTime < maxRetryMs) {
       try {
         const data = await getShops();
         clearTimeout(wakeTimer);
+        clearInterval(secondTicker);
         setIsWakingUp(false);
+
         setShops(data);
         if (data && data.length > 0) {
           try {
             localStorage.setItem('cached_shops', JSON.stringify(data));
           } catch (_) {}
-          setSelectedShopId((prev) => prev || data[0].id);
+
+          const savedShopId = localStorage.getItem('cached_selected_shop_id');
+          const targetShop = data.find((s) => s.id === Number(savedShopId)) || data[0];
+          setSelectedShopId(targetShop.id);
+
+          isInitialBootRef.current = false;
+          await loadForecast(targetShop.id);
+        } else {
+          isInitialBootRef.current = false;
+          setIsLoading(false);
         }
-        setIsLoading(false);
         return;
       } catch (err) {
-        if (Date.now() - startTime >= 4000) {
-          setIsWakingUp(true);
-        }
-        // If within 90s, wait 2s before retrying
-        if (Date.now() - startTime + 2000 < maxRetryMs) {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Request failed: immediately show waking up screen (even if under 4 seconds)
+        clearTimeout(wakeTimer);
+        setIsWakingUp(true);
+
+        const elapsed = Date.now() - startTime;
+        if (elapsed + retryIntervalMs <= maxRetryMs) {
+          // Wait 5 seconds before next retry
+          await new Promise((resolve) => setTimeout(resolve, retryIntervalMs));
         } else {
           break;
         }
@@ -111,24 +137,12 @@ export default function App() {
     }
 
     clearTimeout(wakeTimer);
+    clearInterval(secondTicker);
     setIsWakingUp(false);
-
-    // If offline or unreachable after 90s, check cached shops
-    try {
-      const cachedRaw = localStorage.getItem('cached_shops');
-      if (cachedRaw) {
-        const cachedShops = JSON.parse(cachedRaw);
-        if (cachedShops.length > 0) {
-          setShops(cachedShops);
-          setSelectedShopId((prev) => prev || cachedShops[0].id);
-          setIsLoading(false);
-          return;
-        }
-      }
-    } catch (_) {}
-
     setIsLoading(false);
-    setError('Cannot reach the server after retrying. Is it running?');
+
+    // Only show "Cannot reach the server" after retries expire (90 seconds)
+    setError('Cannot reach the server. Is it running?');
   };
 
   // Fetch forecast whenever selected shop changes
@@ -180,9 +194,9 @@ export default function App() {
     loadShops();
   }, []);
 
-  // When selected shop changes, fetch its forecast
+  // When selected shop changes after initial boot, fetch its forecast
   useEffect(() => {
-    if (selectedShopId) {
+    if (selectedShopId && !isInitialBootRef.current) {
       loadForecast(selectedShopId);
     }
   }, [selectedShopId]);
@@ -253,27 +267,21 @@ export default function App() {
               </div>
             )}
 
-            {error ? (
+            {isWakingUp ? (
+              <ServerWakeUpScreen
+                language={language}
+                elapsedSeconds={wakeUpSeconds}
+              />
+            ) : error ? (
               <ErrorScreen
                 errorDetail={error}
                 language={language}
                 onRetry={() => {
-                  if (!shops.length) {
-                    loadShops();
-                  } else if (selectedShopId) {
-                    loadForecast(selectedShopId);
-                  }
+                  loadShops();
                 }}
               />
             ) : isLoading ? (
-              <LoadingSpinner
-                language={language}
-                message={
-                  isWakingUp
-                    ? 'Waking up the server, this can take up to a minute...'
-                    : undefined
-                }
-              />
+              <LoadingSpinner language={language} />
             ) : (
               <>
                 {activeTab === 'home' && (

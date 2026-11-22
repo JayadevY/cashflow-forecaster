@@ -159,6 +159,9 @@ export const TRANSLATIONS = {
     serverErrorDesc: "Make sure the backend is running with 'uvicorn app.backend.main:app --reload'.",
     btnRetry: "Try Again",
     loadingText: "Loading shop data...",
+    wakingUpTitle: "Waking up the server, this can take up to a minute...",
+    wakingUpSubtitle: "The free-tier server sleeps when inactive. Connecting and starting it up automatically...",
+    wakingUpRetrying: "Retrying automatically every 5 seconds...",
   },
 
   ta: {
@@ -310,6 +313,9 @@ export const TRANSLATIONS = {
     serverErrorDesc: "'uvicorn app.backend.main:app --reload' இயங்குகிறதா என்பதை உறுதிப்படுத்தவும்.",
     btnRetry: "மீண்டும் முயற்சி செய்",
     loadingText: "விவரங்கள் ஏற்றப்படுகின்றன...",
+    wakingUpTitle: "சர்வரைத் தொடங்குகிறது, இதற்கு ஒரு நிமிடம் வரை ஆகலாம்...",
+    wakingUpSubtitle: "பயன்பாட்டில் இல்லாதபோது சர்வர் உறக்க நிலைக்குச் செல்லும். தானாக இணைகிறது...",
+    wakingUpRetrying: "ஒவ்வொரு 5 விநாடிக்கும் தானாக மீண்டும் முயற்சிக்கிறது...",
   },
 
   hi: {
@@ -461,6 +467,9 @@ export const TRANSLATIONS = {
     serverErrorDesc: "जाँचें कि 'uvicorn app.backend.main:app --reload' चल रहा है।",
     btnRetry: "पुनः प्रयास करें",
     loadingText: "डेटा लोड हो रहा है...",
+    wakingUpTitle: "सर्वर चालू हो रहा है, इसमें एक मिनट तक का समय लग सकता है...",
+    wakingUpSubtitle: "उपयोग में न होने पर सर्वर स्लीप मोड में चला जाता है। स्वचालित रूप से कनेक्ट हो रहा है...",
+    wakingUpRetrying: "हर 5 सेकंड में स्वतः पुनः प्रयास किया जा रहा है...",
   },
 };
 

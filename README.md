@@ -55,6 +55,19 @@
 
 ---
 
+## Screenshots
+
+| Screen | Preview | Description |
+| :--- | :---: | :--- |
+| **Home Dashboard** | <img src="docs/screenshots/home.png" width="380" alt="Home Dashboard" /> | Cash meter with safety line, 7-day probabilistic forecast chart, day-by-day risk levels, and automated tips. |
+| **What-If Planner** | <img src="docs/screenshots/whatif.png" width="380" alt="What-If Planner" /> | Evaluates prospective bills, highlights the safest day to pay, and calculates maximum safe amount. |
+| **Udhaar Credit Tracker** | <img src="docs/screenshots/udhaar.png" width="380" alt="Udhaar Tracker" /> | Active ledger of customer credit, overdue alerts, and priority "Collect Today" recovery queue. |
+| **Live Payments & Register** | <img src="docs/screenshots/payments.png" width="380" alt="Live Payments" /> | Real-time counter feed, 1-tap numeric cash keypad, 10-minute undo, and cash vs. bank day reconciliation. |
+| **Multilingual (Tamil / Hindi)** | <img src="docs/screenshots/tamil.png" width="380" alt="Tamil UI" /> | Full localization in everyday Tamil and Hindi with dynamic zero-reload switching. |
+| **Mobile PWA Experience** | <img src="docs/screenshots/mobile.png" width="200" alt="Mobile PWA" /> | Responsive mobile layout with 56px touch targets, fixed bottom navigation bar, and offline support. |
+
+---
+
 ## Architecture
 
 ```mermaid
