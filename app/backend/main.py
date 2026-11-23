@@ -97,8 +97,19 @@ def clear_shop_cache(shop_id: int) -> None:
 
 @app.on_event("startup")
 def on_startup():
-    """Ensure database tables exist and auto-run demo seed if database has no shops."""
+    """Ensure database tables exist, auto-run demo seed if database has no shops, and migrate names."""
     init_db()
+
+    # Rename "Lakshmi Kirana Store" to "Lakshmi Grocery Store" in existing DBs without deleting data
+    conn = get_connection()
+    try:
+        with conn:
+            conn.execute("UPDATE shops SET name = 'Lakshmi Grocery Store' WHERE name = 'Lakshmi Kirana Store'")
+    except Exception as e:
+        print(f"Warning: Startup name migration failed: {e}")
+    finally:
+        conn.close()
+
     # Check if database has no shops (e.g. fresh Render deployment or first run)
     if os.getenv("DISABLE_AUTO_SEED", "").lower() not in ("1", "true", "yes"):
         conn = get_connection()

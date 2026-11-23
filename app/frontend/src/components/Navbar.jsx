@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { Store, Globe, ChevronDown } from 'lucide-react';
-import { TRANSLATIONS } from '../i18n';
+import { TRANSLATIONS, formatShopType } from '../i18n';
 
 export default function Navbar({
   shops = [],
@@ -77,7 +77,7 @@ export default function Navbar({
           >
             {shops.map((shop) => (
               <option key={shop.id} value={shop.id}>
-                {shop.name} ({shop.shop_type.replace('_', ' ')})
+                {shop.name} ({formatShopType(shop.shop_type, language)})
               </option>
             ))}
           </select>

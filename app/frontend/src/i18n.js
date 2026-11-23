@@ -26,6 +26,12 @@ export const TRANSLATIONS = {
     statusWatch: "Watch",
     statusDanger: "Danger",
 
+    // Shop types
+    shopTypeGrocery: "Grocery",
+    shopTypeTeaStall: "Tea Stall",
+    shopTypeVegetable: "Vegetable Mart",
+    shopTypeTiffin: "Tiffin Center",
+
     // Navigation Tabs
     tabHome: "Home",
     tabAddToday: "Add Today",
@@ -180,6 +186,12 @@ export const TRANSLATIONS = {
     statusWatch: "கவனம்",
     statusDanger: "ஆபத்து",
 
+    // Shop types
+    shopTypeGrocery: "மளிகை (Grocery)",
+    shopTypeTeaStall: "தேநீர் கடை",
+    shopTypeVegetable: "காய்கறி கடை",
+    shopTypeTiffin: "டிபன் சென்டர்",
+
     // Navigation Tabs
     tabHome: "முகப்பு",
     tabAddToday: "இன்று சேர்",
@@ -333,6 +345,12 @@ export const TRANSLATIONS = {
     statusSafe: "सुरक्षित",
     statusWatch: "ध्यान दें",
     statusDanger: "ख़तरा",
+
+    // Shop types
+    shopTypeGrocery: "ग्रोसरी (Grocery)",
+    shopTypeTeaStall: "चाय की दुकान",
+    shopTypeVegetable: "सब्जी की दुकान",
+    shopTypeTiffin: "टिफिन सेंटर",
 
     // Navigation Tabs
     tabHome: "मुख्य",
@@ -502,6 +520,49 @@ export const WEEKDAYS = {
     Sunday: 'रविवार',
   },
 };
+
+export const SHOP_TYPES = {
+  en: {
+    kirana: 'Grocery',
+    grocery: 'Grocery',
+    tea_stall: 'Tea Stall',
+    vegetable_shop: 'Vegetable Mart',
+    tiffin_center: 'Tiffin Center',
+  },
+  ta: {
+    kirana: 'மளிகை (Grocery)',
+    grocery: 'மளிகை (Grocery)',
+    tea_stall: 'தேநீர் கடை',
+    vegetable_shop: 'காய்கறி கடை',
+    tiffin_center: 'டிபன் சென்டர்',
+  },
+  hi: {
+    kirana: 'ग्रोसरी (Grocery)',
+    grocery: 'ग्रोसरी (Grocery)',
+    tea_stall: 'चाय की दुकान',
+    vegetable_shop: 'सब्जी की दुकान',
+    tiffin_center: 'टिफिन सेंटर',
+  },
+};
+
+/**
+ * Format and map shop type for UI display.
+ * Maps 'kirana' to 'Grocery' (with localization).
+ */
+export function formatShopType(shopType, language = 'en') {
+  if (!shopType) return '';
+  const lang = ['en', 'ta', 'hi'].includes(language) ? language : 'en';
+  const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+  const key = shopType.toLowerCase().trim();
+  if (SHOP_TYPES[lang] && SHOP_TYPES[lang][key]) {
+    return SHOP_TYPES[lang][key];
+  }
+  if (SHOP_TYPES.en[key]) {
+    return SHOP_TYPES.en[key];
+  }
+  const cleaned = shopType.replace('_', ' ');
+  return cleaned.toLowerCase() === 'kirana' ? (t.shopTypeGrocery || 'Grocery') : cleaned;
+}
 
 /**
  * Format and interpolate a tip sentence in the user's selected language.

@@ -7,7 +7,7 @@ This script sets up demo data in SQLite:
    - Murugan Tea Stall (tea_stall)
    - Kavitha Vegetable Mart (vegetable_shop)
    - Amma Tiffin Center (tiffin_center)
-   - Lakshmi Kirana Store (kirana)
+   - Lakshmi Grocery Store (kirana)
 3. Loads the last 365 days of historical transactions from data/<shop_type>.csv
    into daily_entries for each shop.
 """
@@ -44,7 +44,7 @@ DEMO_SHOPS = [
         "csv_file": "tiffin_center.csv",
     },
     {
-        "name": "Lakshmi Kirana Store",
+        "name": "Lakshmi Grocery Store",
         "shop_type": "kirana",
         "csv_file": "kirana.csv",
     },
@@ -195,7 +195,7 @@ def seed_database(db_path: Path = None) -> None:
                         (tc_id, "Murugesh Mason", 1100.0, 1100.0, "2026-10-29", "2026-11-05", "Cleared on Diwali eve", "closed"),
                     ])
 
-                # 4. Kirana Store (10 demo customers: family monthly khata / grocery accounts)
+                # 4. Grocery Store (10 demo customers: family monthly khata / grocery accounts)
                 ks_id = shops_by_type.get("kirana")
                 if ks_id:
                     demo_udhaar_records.extend([
@@ -311,7 +311,7 @@ def seed_database(db_path: Path = None) -> None:
                         ref = f"TC-{today_str.replace('-', '')}-{idx+1:03d}"
                         demo_tx_records.append((tc_id, created_at, amt, mode, src, "success", ref, note))
 
-                # 4. Kirana Store (15 tx: mix of cash, UPI, card, netbanking)
+                # 4. Grocery Store (15 tx: mix of cash, UPI, card, netbanking)
                 if ks_id:
                     amounts_modes = [
                         (180.0, "cash", "manual", "Milk & bread"),

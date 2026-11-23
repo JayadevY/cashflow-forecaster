@@ -1,6 +1,6 @@
 # Daily Cash-Flow Forecaster for Small Businesses
 
-> An early-warning cash flow forecasting and liquidity management Progressive Web App (PWA) designed for non-technical neighborhood shop owners (kirana stores, tea stalls, tiffin centers, vegetable marts) to predict cash shortages 7 days in advance.
+> An early-warning cash flow forecasting and liquidity management Progressive Web App (PWA) designed for non-technical neighborhood shop owners (grocery stores, tea stalls, tiffin centers, vegetable marts) to predict cash shortages 7 days in advance.
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-success?style=for-the-badge&logo=vercel)](https://cashflow-forecaster-three.vercel.app)
 [![API Status](https://img.shields.io/badge/API-FastAPI%20on%20Render-informational?style=for-the-badge&logo=fastapi)](https://cashflow-forecaster-backend.onrender.com/health)
@@ -163,7 +163,7 @@ We evaluated four model families across 730 days of transactions for four repres
 | | Seasonal Naive | ₹3,151.50 | ₹1,964.70 | 19.99% | 8.43% | |
 | | **SARIMAX** | **₹1,583.47** | **₹417.34** | **10.46%** | **2.09%** | **Best (Lowest MAPE)** |
 | | XGBoost | ₹1,630.19 | ₹536.20 | 10.48% | 2.36% | |
-| **kirana** | Moving Average | ₹4,126.77 | ₹3,052.84 | 18.31% | 8.41% | |
+| **grocery** | Moving Average | ₹4,126.77 | ₹3,052.84 | 18.31% | 8.41% | |
 | | Seasonal Naive | ₹4,450.91 | ₹3,127.74 | 19.95% | 9.93% | |
 | | **SARIMAX** | **₹2,697.81** | **₹450.47** | **12.45%** | **2.69%** | **Best (Lowest MAPE)** |
 | | XGBoost | ₹2,955.11 | ₹1,422.35 | 12.89% | 3.62% | |
@@ -188,14 +188,14 @@ To determine what risk can actually be predicted versus what requires owner comm
 | **tiffin_center** | A (As-is) | 16 | 1 | 1 | 0 | 100.0% | 6.2% |
 | | B (Forecastable-only) | 0 | 1 | 0 | 1 | 0.0% | 0.0% |
 | | C (Owner-informed) | 16 | 17 | 15 | 2 | 88.2% | 93.8% |
-| **kirana** | A (As-is) | 9 | 13 | 9 | 4 | 69.2% | 100.0% |
+| **grocery** | A (As-is) | 9 | 13 | 9 | 4 | 69.2% | 100.0% |
 | | B (Forecastable-only) | 8 | 13 | 8 | 5 | 61.5% | 100.0% |
 | | C (Owner-informed) | 9 | 13 | 9 | 4 | 69.2% | 100.0% |
 
 *(Source: `reports/alert_backtest_v2.csv`)*
 
 ### Honest Observations on Model Results
-- **ARIMA vs. XGBoost Parity**: SARIMAX and XGBoost are roughly tied in accuracy (~10–12% MAPE). XGBoost slightly edges out on smaller shops with sharp non-linear holiday spikes (`tea_stall`, `vegetable_shop`), while SARIMAX performs slightly better on linear autoregressive series (`kirana`, `tiffin_center`).
+- **ARIMA vs. XGBoost Parity**: SARIMAX and XGBoost are roughly tied in accuracy (~10–12% MAPE). XGBoost slightly edges out on smaller shops with sharp non-linear holiday spikes (`tea_stall`, `vegetable_shop`), while SARIMAX performs slightly better on linear autoregressive series (`grocery`, `tiffin_center`).
 - **Sample Size Limitation**: The evaluation utilized 10 cross-validation folds on a 7-day forecast horizon (70 evaluated horizon days per shop). While sufficient for benchmark comparisons, real-world deployment would require continuous rolling telemetry.
 - **The Role of Owner Information**: In the `tiffin_center`, **100% of Setting A cash crises** were triggered by unannounced owner cash withdrawals. Pure sales forecasting only achieved a 6.2% recall in Setting A; once the owner entered their known withdrawal plans (Setting C), recall surged to **93.8%**. Cash-flow risk engines cannot replace owner communication.
 
@@ -205,7 +205,7 @@ To determine what risk can actually be predicted versus what requires owner comm
 
 1. **Synthetic Data**: All data was generated algorithmically based on empirical micro-retail dynamics (monsoon seasonality, Diwali/Pongal surges, weekend shifts, and wholesale cycles). It does not reflect a live bank account feed.
 2. **Unforecastable Cash Outflows**: Personal withdrawals and emergency repair expenses cannot be predicted from sales history. The model depends on the owner utilizing the planned payment / what-if tool to register upcoming outflows.
-3. **Interval Calibration Variations**: While empirical coverage was near nominal for `tea_stall` (78.8%), `tiffin_center` (72.8%), and `kirana` (72.5%) for the 80% p10–p90 band, it was somewhat overconfident for `vegetable_shop` (66.2%) due to high inventory purchase volatility.
+3. **Interval Calibration Variations**: While empirical coverage was near nominal for `tea_stall` (78.8%), `tiffin_center` (72.8%), and `grocery` (72.5%) for the 80% p10–p90 band, it was somewhat overconfident for `vegetable_shop` (66.2%) due to high inventory purchase volatility.
 4. **Demo Data Horizon**: The bundled seed dataset covers November 1, 2024 through **October 31, 2026**.
 
 ---

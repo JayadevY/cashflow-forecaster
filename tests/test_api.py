@@ -366,7 +366,7 @@ def _seed_kirana_shop(client) -> int:
     threshold = float(round(3.0 * df_365["expenses"].mean()))
 
     shop = client.post("/shops", json={
-        "name": "Lakshmi Kirana Store",
+        "name": "Lakshmi Grocery Store",
         "shop_type": "kirana",
         "opening_cash": prev_closing,
         "low_cash_threshold": threshold,
@@ -1037,4 +1037,24 @@ def test_transaction_simulate(client):
     assert tx["source"] == "simulated"
     assert tx["status"] == "success"
     assert tx["reference"].startswith("SIM-")
+
+
+def test_startup_migration_renames_kirana_shop(client):
+    """Test startup step automatically renames 'Lakshmi Kirana Store' to 'Lakshmi Grocery Store'."""
+    conn = get_connection()
+    with conn:
+        cursor = conn.execute(
+            "INSERT INTO shops (name, shop_type, low_cash_threshold, opening_cash) VALUES (?, ?, ?, ?)",
+            ("Lakshmi Kirana Store", "kirana", 20000.0, 30000.0),
+        )
+        shop_id = cursor.lastrowid
+
+    # Run on_startup
+    main.on_startup()
+
+    # Verify name updated
+    with conn:
+        row = conn.execute("SELECT name FROM shops WHERE id = ?", (shop_id,)).fetchone()
+        assert row["name"] == "Lakshmi Grocery Store"
+
 
